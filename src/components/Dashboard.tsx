@@ -1133,7 +1133,7 @@ export function Dashboard({ onLogout }: Props) {
             <button id="tab-overview" className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{t("header.overview")}</button>
             <button id="tab-individual" className={tab === "individual" ? "active" : ""} onClick={() => setTab("individual")}>{t("header.individual")}</button>
             <button id="tab-compare" className={tab === "compare" ? "active" : ""} onClick={() => setTab("compare")}>{t("header.compare")}</button>
-            <button id="tab-hiking" className={tab === "hiking" ? "active" : ""} onClick={() => setTab("hiking")}>{t("header.hiking")}</button>
+            {!isTauriRuntime() && <button id="tab-hiking" className={tab === "hiking" ? "active" : ""} onClick={() => setTab("hiking")}>{t("header.hiking")}</button>}
           </div>
         </div>
         <div className="header-right">

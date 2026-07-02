@@ -10,8 +10,19 @@ export function HikingTab() {
   const [trips, setTrips] = useState<Trip[]>([]);
 
   useEffect(() => {
-    void api.hikingOverview(year ?? undefined).then(setOv);
-    void api.hikingTrips(undefined, year ?? undefined).then(setTrips);
+    let cancelled = false;
+    Promise.all([
+      api.hikingOverview(year ?? undefined).catch(() => null),
+      api.hikingTrips(undefined, year ?? undefined).catch((): Trip[] => []),
+    ]).then(([o, ts]) => {
+      if (!cancelled) {
+        setOv(o);
+        setTrips(ts);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [year]);
 
   const years = Array.from({ length: 2026 - 2017 + 1 }, (_, i) => 2017 + i);
@@ -20,9 +31,9 @@ export function HikingTab() {
   return (
     <div className="hiking-tab">
       <div className="hiking-years">
-        <button className={year === null ? "active" : ""} onClick={() => setYear(null)}>All</button>
+        <button className={year === null ? "active" : ""} aria-pressed={year === null} onClick={() => setYear(null)}>All</button>
         {years.map((y) => (
-          <button key={y} className={year === y ? "active" : ""} onClick={() => setYear(y)}>{y}</button>
+          <button key={y} className={year === y ? "active" : ""} aria-pressed={year === y} onClick={() => setYear(y)}>{y}</button>
         ))}
       </div>
 
