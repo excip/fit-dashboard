@@ -50,11 +50,14 @@ impl Default for HikingSettings {
     }
 }
 
-/// Per-activity manual override (Phase 3 writes these; Phase 1 just honors them).
+/// Per-activity manual override. ForceHike/ForceWalk flip classification;
+/// LinkPrevious joins the activity's trip to the preceding trip regardless of
+/// spatial/temporal continuity (bridges unrecorded GPS gaps).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Override {
     ForceHike,
     ForceWalk,
+    LinkPrevious,
 }
 
 /// Great-circle distance in metres.

@@ -7,7 +7,7 @@ pub fn is_hike(a: &HikeActivity, s: &HikingSettings, ovr: Option<Override>) -> b
     match ovr {
         Some(Override::ForceHike) => return true,
         Some(Override::ForceWalk) => return false,
-        None => {}
+        _ => {}
     }
     if !POOL.contains(&a.activity_type.as_str()) {
         return false;
@@ -80,5 +80,11 @@ mod tests {
     fn override_wins_over_rule() {
         assert!(!is_hike(&act("hiking", 1_000.0, 500.0), &HikingSettings::default(), Some(Override::ForceWalk)));
         assert!(is_hike(&act("walking", 100.0, 5.0), &HikingSettings::default(), Some(Override::ForceHike)));
+    }
+
+    #[test]
+    fn link_override_does_not_affect_classification() {
+        // a home walk with a link override is still not a hike
+        assert!(!is_hike(&act("walking", 4_500.0, 20.0), &HikingSettings::default(), Some(Override::LinkPrevious)));
     }
 }

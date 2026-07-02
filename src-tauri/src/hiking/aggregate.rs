@@ -60,6 +60,7 @@ mod tests {
     fn trip(id: i64, y: i32, dist: f64, ids: Vec<i64>) -> Trip {
         Trip {
             id, category: TripCategory::ThruHike,
+            name: None,
             start_date: NaiveDate::from_ymd_opt(y,5,1).unwrap(),
             end_date: NaiveDate::from_ymd_opt(y,5,5).unwrap(),
             nights: 4, activity_ids: ids,

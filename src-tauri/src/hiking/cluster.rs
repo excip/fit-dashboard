@@ -11,6 +11,7 @@ pub enum TripCategory { DayHike, Weekend, ThruHike }
 pub struct Trip {
     pub id: i64,               // = first member activity_id (stable)
     pub category: TripCategory,
+    pub name: Option<String>,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub nights: i64,
@@ -29,6 +30,25 @@ fn category_for(nights: i64) -> TripCategory {
     }
 }
 
+/// Auto-label from member location names: unique names in order;
+/// one name => that name, several => "first → last", none => None.
+fn derive_name(members: &[&HikeActivity]) -> Option<String> {
+    let mut names: Vec<&str> = Vec::new();
+    for m in members {
+        if let Some(n) = m.location_name.as_deref() {
+            if !n.is_empty() && names.last() != Some(&n) {
+                names.push(n);
+            }
+        }
+    }
+    names.dedup();
+    match names.len() {
+        0 => None,
+        1 => Some(names[0].to_string()),
+        _ => Some(format!("{} → {}", names[0], names[names.len() - 1])),
+    }
+}
+
 /// Filter to hikes, then chain consecutive hikes into trips.
 pub fn cluster_trips(
     activities: &[HikeActivity],
@@ -43,14 +63,16 @@ pub fn cluster_trips(
 
     let mut trips: Vec<Vec<&HikeActivity>> = Vec::new();
     for h in hikes {
-        let joins = trips.last().map_or(false, |cur| {
-            let prev = *cur.last().unwrap();
-            let gap = (h.date - prev.date).num_days();
-            let near = haversine_m(prev.end_lat, prev.end_lon, h.start_lat, h.start_lon)
-                <= settings.link_radius_m;
-            // gap of 0 (same day) up to max_rest_days rest days => <= max_rest_days + 1
-            gap >= 0 && gap <= settings.max_rest_days + 1 && near
-        });
+        let linked = matches!(overrides.get(&h.activity_id), Some(Override::LinkPrevious));
+        let joins = (linked && !trips.is_empty())
+            || trips.last().map_or(false, |cur| {
+                let prev = *cur.last().unwrap();
+                let gap = (h.date - prev.date).num_days();
+                let near = haversine_m(prev.end_lat, prev.end_lon, h.start_lat, h.start_lon)
+                    <= settings.link_radius_m;
+                // gap of 0 (same day) up to max_rest_days rest days => <= max_rest_days + 1
+                gap >= 0 && gap <= settings.max_rest_days + 1 && near
+            });
         if joins {
             trips.last_mut().unwrap().push(h);
         } else {
@@ -65,6 +87,7 @@ pub fn cluster_trips(
         Trip {
             id: members.first().unwrap().activity_id,
             category: category_for(nights),
+            name: derive_name(&members),
             start_date,
             end_date,
             nights,
@@ -197,5 +220,46 @@ mod tests {
         walk.distance_m = 4_500.0;
         let (s, o) = defaults();
         assert!(cluster_trips(&[walk], &s, &o).is_empty());
+    }
+
+    #[test]
+    fn link_previous_override_bridges_spatial_gap() {
+        // consecutive days 200+ km apart normally split; LinkPrevious on the
+        // second activity joins them into one trip
+        let acts = vec![
+            h(1, 2022, 5, 1, 34.0,-117.0, 34.0,-117.0, 500.0),
+            h(2, 2022, 5, 2, 47.0,   8.0, 47.0,   8.0, 500.0),
+        ];
+        let (s, _) = defaults();
+        let mut o = HashMap::new();
+        o.insert(2, Override::LinkPrevious);
+        let trips = cluster_trips(&acts, &s, &o);
+        assert_eq!(trips.len(), 1);
+        assert_eq!(trips[0].activity_ids, vec![1, 2]);
+        assert_eq!(trips[0].nights, 1);
+    }
+
+    #[test]
+    fn link_previous_on_first_hike_is_noop() {
+        let acts = vec![h(1, 2022, 5, 1, 34.0,-117.0, 34.0,-117.0, 500.0)];
+        let (s, _) = defaults();
+        let mut o = HashMap::new();
+        o.insert(1, Override::LinkPrevious);
+        assert_eq!(cluster_trips(&acts, &s, &o).len(), 1);
+    }
+
+    #[test]
+    fn trip_name_derived_from_location_names() {
+        let mut a = h(1, 2022, 5, 1, 34.0,-117.0, 34.1,-117.1, 500.0);
+        a.location_name = Some("Inyo County".into());
+        let mut b = h(2, 2022, 5, 2, 34.1,-117.1, 34.2,-117.2, 500.0);
+        b.location_name = Some("Inyo County".into());
+        let mut c = h(3, 2022, 5, 3, 34.2,-117.2, 34.3,-117.3, 500.0);
+        c.location_name = Some("Fresno County".into());
+        let (s, o) = defaults();
+        let trips = cluster_trips(&[a.clone(), b.clone(), c], &s, &o);
+        assert_eq!(trips[0].name.as_deref(), Some("Inyo County → Fresno County"));
+        let trips2 = cluster_trips(&[a, b], &s, &o);
+        assert_eq!(trips2[0].name.as_deref(), Some("Inyo County"));
     }
 }
