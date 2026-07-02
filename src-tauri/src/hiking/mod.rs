@@ -4,6 +4,7 @@ pub mod classify;
 pub mod cluster;
 pub mod aggregate;
 pub mod store;
+#[cfg(all(feature = "web", not(feature = "tauri-app")))]
 pub mod http;
 
 /// One candidate activity pulled from garmin.db.
