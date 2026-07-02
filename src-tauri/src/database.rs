@@ -139,6 +139,16 @@ impl Database {
                 value VARCHAR NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS hiking_overrides (
+                activity_id BIGINT PRIMARY KEY,
+                kind VARCHAR NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS hiking_trip_names (
+                trip_id BIGINT PRIMARY KEY,
+                name VARCHAR NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS file_hash_blacklist (
                 file_hash VARCHAR PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT now()
@@ -631,6 +641,27 @@ fn round_6_to_f32(value: f64) -> f32 {
     (((value as f32) * 1_000_000.0).round()) / 1_000_000.0
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hiking_override_and_name_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("fitdash-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Database::new(dir.join("t.duckdb").to_str().unwrap()).unwrap();
+        db.set_hiking_override(42, Some("link_previous")).unwrap();
+        db.set_hiking_override(43, Some("force_walk")).unwrap();
+        db.set_hiking_override(43, None).unwrap();
+        assert_eq!(db.hiking_overrides().unwrap(), vec![(42, "link_previous".to_string())]);
+        db.set_hiking_trip_name(42, Some("PCT 2022")).unwrap();
+        assert_eq!(db.hiking_trip_names().unwrap(), vec![(42, "PCT 2022".to_string())]);
+        db.set_hiking_trip_name(42, None).unwrap();
+        assert!(db.hiking_trip_names().unwrap().is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
 impl Database {
     pub fn get_activity_hash(&self, activity_id: i64) -> Result<Option<String>> {
         let conn = self.conn.lock().expect("db mutex poisoned");
@@ -717,6 +748,77 @@ impl Database {
         }
         self.checkpoint_if_wal_exceeds_limit()?;
         Ok(())
+    }
+
+    pub fn hiking_overrides(&self) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare("SELECT activity_id, kind FROM hiking_overrides")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_hiking_override(&self, activity_id: i64, kind: Option<&str>) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            // DuckDB doesn't support INSERT OR REPLACE; delete then insert
+            conn.execute(
+                "DELETE FROM hiking_overrides WHERE activity_id = ?1",
+                params![activity_id],
+            )?;
+            if let Some(k) = kind {
+                conn.execute(
+                    "INSERT INTO hiking_overrides (activity_id, kind) VALUES (?1, ?2)",
+                    params![activity_id, k],
+                )?;
+            }
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn hiking_trip_names(&self) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare("SELECT trip_id, name FROM hiking_trip_names")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_hiking_trip_name(&self, trip_id: i64, name: Option<&str>) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            // DuckDB doesn't support INSERT OR REPLACE; delete then insert
+            conn.execute(
+                "DELETE FROM hiking_trip_names WHERE trip_id = ?1",
+                params![trip_id],
+            )?;
+            if let Some(n) = name {
+                conn.execute(
+                    "INSERT INTO hiking_trip_names (trip_id, name) VALUES (?1, ?2)",
+                    params![trip_id, n],
+                )?;
+            }
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn activity_id_by_file_name(&self, file_name: &str) -> Result<Option<i64>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt =
+            conn.prepare("SELECT id FROM activities WHERE file_name = ?1 LIMIT 1")?;
+        let mut rows = stmt.query(params![file_name])?;
+        if let Some(row) = rows.next()? {
+            return Ok(Some(row.get(0)?));
+        }
+        Ok(None)
     }
 
     #[cfg(all(feature = "web", not(feature = "tauri-app")))]
