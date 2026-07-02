@@ -76,4 +76,38 @@ mod tests {
         assert_eq!(overview(&trips, Some(2022)).total_distance_m, 800_000.0);
         assert_eq!(overview(&trips, Some(2024)).trip_count, 1);
     }
+
+    #[test]
+    fn superlatives_pick_member_maxima_and_ignore_non_members() {
+        use crate::hiking::HikeActivity;
+
+        fn act(id: i64, dist: f64, gain: f64, max_elev: Option<f64>) -> HikeActivity {
+            HikeActivity {
+                activity_id: id,
+                date: NaiveDate::from_ymd_opt(2022, 5, 1).unwrap(),
+                activity_type: "walking".into(),
+                distance_m: dist,
+                elevation_gain: gain,
+                elevation_loss: 0.0,
+                steps: 0,
+                start_lat: 0.0, start_lon: 0.0, end_lat: 0.0, end_lon: 0.0,
+                max_elevation: max_elev, location_name: None, duration_s: 0.0,
+            }
+        }
+
+        let acts = vec![
+            act(1, 33_200.0, 1338.0, Some(2100.0)),
+            act(2, 18_000.0, 700.0, None),
+            act(3, 99_000.0, 9_999.0, Some(9_000.0)), // not a member — must be ignored
+        ];
+        let t = trip(1, 2022, 51_200.0, vec![1, 2]);
+        let s = superlatives(&t, &acts);
+        assert_eq!(s.longest_day_m, 33_200.0);
+        assert_eq!(s.biggest_climb_m, 1338.0);
+        assert_eq!(s.highest_point_m, Some(2100.0));
+
+        // all members without elevation data => None
+        let t2 = trip(2, 2022, 18_000.0, vec![2]);
+        assert_eq!(superlatives(&t2, &acts).highest_point_m, None);
+    }
 }
