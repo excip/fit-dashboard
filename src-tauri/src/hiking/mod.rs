@@ -3,6 +3,7 @@ use chrono::NaiveDate;
 pub mod classify;
 pub mod cluster;
 pub mod aggregate;
+pub mod store;
 
 /// One candidate activity pulled from garmin.db.
 #[derive(Debug, Clone)]
