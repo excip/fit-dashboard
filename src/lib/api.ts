@@ -273,11 +273,13 @@ export const api = {
   },
 
   async hikingOverview(year?: number): Promise<HikingOverview> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
     const res = await webClient.get("/hiking/overview", { params: { year } });
     return res.data;
   },
 
   async hikingTrips(category?: TripCategory, year?: number): Promise<Trip[]> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
     const res = await webClient.get("/hiking/trips", { params: { category, year } });
     return res.data;
   }
