@@ -3205,7 +3205,7 @@ button:focus-visible {
   box-shadow: 0 2px 8px var(--accent-glow);
 }
 
-.stat-meta {
+.hiking-tab .stat-meta {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin: -0.25rem 0 0;
@@ -3220,7 +3220,7 @@ button:focus-visible {
   letter-spacing: 0.4px;
 }
 
-.trip-row {
+.hiking-tab .trip-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -3229,29 +3229,29 @@ button:focus-visible {
   font-size: 0.84rem;
 }
 
-.trip-row:last-of-type {
+.hiking-tab .trip-row:last-of-type {
   border-bottom: none;
 }
 
-.trip-dates {
+.hiking-tab .trip-dates {
   flex: 1;
   color: var(--text);
 }
 
-.trip-nights {
+.hiking-tab .trip-nights {
   min-width: 2.5rem;
   text-align: right;
   color: var(--text-muted);
 }
 
-.trip-km {
+.hiking-tab .trip-km {
   min-width: 4rem;
   text-align: right;
   font-weight: 600;
   color: var(--accent);
 }
 
-.trip-gain {
+.hiking-tab .trip-gain {
   min-width: 4.5rem;
   text-align: right;
   color: var(--text-secondary);
