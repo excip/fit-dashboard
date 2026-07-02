@@ -14,13 +14,15 @@ pub struct StorageInfo {
 pub struct AppState {
     pub db: Arc<Database>,
     pub storage: Arc<StorageInfo>,
+    pub garmin_db_path: Option<Arc<std::path::PathBuf>>,
 }
 
 impl AppState {
-    pub fn new(db: Database, storage: StorageInfo) -> Self {
+    pub fn new(db: Database, storage: StorageInfo, garmin_db_path: Option<std::path::PathBuf>) -> Self {
         Self {
             db: Arc::new(db),
             storage: Arc::new(storage),
+            garmin_db_path: garmin_db_path.map(Arc::new),
         }
     }
 }

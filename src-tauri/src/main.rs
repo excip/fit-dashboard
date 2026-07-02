@@ -17,6 +17,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> =
     std::sync::OnceLock::new();
 
+fn resolve_garmin_db() -> Option<std::path::PathBuf> {
+    std::env::var("FIT_DASHBOARD_GARMIN_DB").ok().map(std::path::PathBuf::from)
+}
+
 fn resolve_data_dir() -> std::path::PathBuf {
     if let Ok(path) = std::env::var("FIT_DASHBOARD_DATA_DIR") {
         return std::path::PathBuf::from(path);
@@ -110,7 +114,7 @@ async fn main() -> Result<()> {
         fit_files_dir: fit_files_dir.to_string_lossy().to_string(),
     };
 
-    let state = AppState::new(database::Database::new(&db_path)?, storage);
+    let state = AppState::new(database::Database::new(&db_path)?, storage, resolve_garmin_db());
     tracing::info!(
         data_dir = %state.storage.data_dir,
         db_path = %state.storage.db_path,

@@ -10,9 +10,11 @@ services:
     volumes:
       - ./data:/data # Persistent storage for FitDashboard database
       - ./data/fit-files:/data/fit-files:rw # local directory for FIT files storage and syncing
+      - /opt/appdata/fitness/givemydata/garmin.db:/garmin/garmin.db:ro
     environment:
       - FIT_DASHBOARD_DOCKER=1
       - FIT_DASHBOARD_DATA_DIR=/data
       - FIT_DASHBOARD_DB=/data/fit-dashboard.duckdb
       - FIT_DASHBOARD_SESSION_TTL=${FIT_DASHBOARD_SESSION_TTL:-72h}
       - RUST_LOG=${RUST_LOG:-info,fit_dashboard_core=debug,hyper=warn,h2=warn}
+      - FIT_DASHBOARD_GARMIN_DB=/garmin/garmin.db
