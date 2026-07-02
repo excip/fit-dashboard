@@ -139,6 +139,8 @@ impl Database {
                 value VARCHAR NOT NULL
             );
 
+            -- hiking_overrides/hiking_trip_names are keyed by GARMIN activity ids
+            -- (from garmin.db, globally unique ~10^10), NOT by local activities.id
             CREATE TABLE IF NOT EXISTS hiking_overrides (
                 activity_id BIGINT PRIMARY KEY,
                 kind VARCHAR NOT NULL
@@ -813,7 +815,7 @@ impl Database {
     pub fn activity_id_by_file_name(&self, file_name: &str) -> Result<Option<i64>> {
         let conn = self.conn.lock().expect("db mutex poisoned");
         let mut stmt =
-            conn.prepare("SELECT id FROM activities WHERE file_name = ?1 LIMIT 1")?;
+            conn.prepare("SELECT id FROM activities WHERE file_name = ?1 ORDER BY id DESC LIMIT 1")?;
         let mut rows = stmt.query(params![file_name])?;
         if let Some(row) = rows.next()? {
             return Ok(Some(row.get(0)?));
