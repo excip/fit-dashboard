@@ -52,6 +52,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/activities", get(list_activities))
         .route("/api/activities/{id}", patch(rename_activity).delete(delete_activity))
         .route("/api/overview", get(overview))
+        .route("/api/hiking/overview", get(crate::hiking::http::hiking_overview))
+        .route("/api/hiking/trips", get(crate::hiking::http::hiking_trips))
         .route("/api/records/{id}", get(records))
         .route("/api/supporter/verify", post(verify_supporter_code))
         .route("/api/supporter/status", get(get_supporter_status).post(set_supporter_status))
@@ -757,7 +759,7 @@ fn extract_session(state: &AppState, headers: &HeaderMap) -> Result<String, Stat
     Ok(token)
 }
 
-fn ensure_session(state: &AppState, headers: &HeaderMap) -> Result<(), StatusCode> {
+pub fn ensure_session(state: &AppState, headers: &HeaderMap) -> Result<(), StatusCode> {
     extract_session(state, headers).map(|_| ())
 }
 
