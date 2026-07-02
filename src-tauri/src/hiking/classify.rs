@@ -49,6 +49,24 @@ mod tests {
     }
 
     #[test]
+    fn gain_alone_qualifies() {
+        // below distance threshold, above gain threshold
+        assert!(is_hike(&act("walking", 8_000.0, 400.0), &HikingSettings::default(), None));
+    }
+
+    #[test]
+    fn distance_alone_qualifies() {
+        // above distance threshold, below gain threshold
+        assert!(is_hike(&act("walking", 14_000.0, 100.0), &HikingSettings::default(), None));
+    }
+
+    #[test]
+    fn exact_thresholds_are_not_hikes() {
+        // thresholds are strict: exactly 250m gain / 12km distance is still a walk
+        assert!(!is_hike(&act("walking", 12_000.0, 250.0), &HikingSettings::default(), None));
+    }
+
+    #[test]
     fn garmin_hiking_label_always_hike() {
         assert!(is_hike(&act("hiking", 1_000.0, 50.0), &HikingSettings::default(), None));
     }
