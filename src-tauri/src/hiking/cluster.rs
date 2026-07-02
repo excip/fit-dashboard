@@ -130,6 +130,42 @@ mod tests {
     }
 
     #[test]
+    fn max_rest_days_boundary_keeps_trip_together() {
+        // day 1 -> day 6: gap 5 = 4 rest days = exactly max_rest_days => one trip
+        let acts = vec![
+            h(1, 2022, 5, 1, 34.0,-117.0, 34.1,-117.1, 500.0),
+            h(2, 2022, 5, 6, 34.1,-117.1, 34.2,-117.2, 700.0),
+        ];
+        let (s, o) = defaults();
+        assert_eq!(cluster_trips(&acts, &s, &o).len(), 1);
+    }
+
+    #[test]
+    fn gap_beyond_max_rest_days_splits_trips() {
+        // day 1 -> day 7: gap 6 = 5 rest days > max_rest_days => two trips
+        let acts = vec![
+            h(1, 2022, 5, 1, 34.0,-117.0, 34.1,-117.1, 500.0),
+            h(2, 2022, 5, 7, 34.1,-117.1, 34.2,-117.2, 700.0),
+        ];
+        let (s, o) = defaults();
+        assert_eq!(cluster_trips(&acts, &s, &o).len(), 2);
+    }
+
+    #[test]
+    fn same_day_hikes_merge_into_one_day_hike() {
+        let acts = vec![
+            h(1, 2026, 6, 28, 46.63,8.60, 46.65,8.62, 400.0),
+            h(2, 2026, 6, 28, 46.65,8.62, 46.67,8.64, 324.0),
+        ];
+        let (s, o) = defaults();
+        let trips = cluster_trips(&acts, &s, &o);
+        assert_eq!(trips.len(), 1);
+        assert_eq!(trips[0].nights, 0);
+        assert_eq!(trips[0].category, TripCategory::DayHike);
+        assert_eq!(trips[0].activity_ids, vec![1, 2]);
+    }
+
+    #[test]
     fn far_apart_days_are_separate_trips() {
         // consecutive dates but 200km apart => two trips (two day hikes)
         let acts = vec![
