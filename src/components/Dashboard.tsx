@@ -14,6 +14,7 @@ import { DatePickerPopover } from "./DatePickerPopover";
 import { DateRange } from "react-day-picker";
 import { DonationBanner } from "./DonationBanner";
 import { SettingsPanel } from "./SettingsPanel";
+import { HikingTab } from "./HikingTab";
 import { api } from "../lib/api";
 import { isTauri } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -273,7 +274,7 @@ function IconVo2() {
 /* ── Dashboard Component ─────────────────────────────────────────── */
 
 export function Dashboard({ onLogout }: Props) {
-  const [tab, setTab] = useState<"overview" | "individual" | "compare">("overview");
+  const [tab, setTab] = useState<"overview" | "individual" | "compare" | "hiking">("overview");
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -1132,6 +1133,7 @@ export function Dashboard({ onLogout }: Props) {
             <button id="tab-overview" className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>{t("header.overview")}</button>
             <button id="tab-individual" className={tab === "individual" ? "active" : ""} onClick={() => setTab("individual")}>{t("header.individual")}</button>
             <button id="tab-compare" className={tab === "compare" ? "active" : ""} onClick={() => setTab("compare")}>{t("header.compare")}</button>
+            <button id="tab-hiking" className={tab === "hiking" ? "active" : ""} onClick={() => setTab("hiking")}>{t("header.hiking")}</button>
           </div>
         </div>
         <div className="header-right">
@@ -1555,6 +1557,8 @@ export function Dashboard({ onLogout }: Props) {
             )
           ) : tab === "compare" ? (
             <CompareCharts compareIds={compareIds} activities={activities} theme={theme} distanceUnit={distanceUnit} />
+          ) : tab === "hiking" ? (
+            <HikingTab />
           ) : selectedActivity ? (
             <>
               <div className="detail-header">

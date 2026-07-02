@@ -3165,3 +3165,101 @@ button:focus-visible {
 .activity-meta-row .spacer {
   flex: 1;
 }
+
+/* ── Hiking Tab ────────────────────────────────────────────────────── */
+
+.hiking-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.hiking-years {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.hiking-years button {
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.hiking-years button:hover {
+  color: var(--text);
+  background: var(--accent-glow);
+  border-color: var(--border-accent);
+}
+
+.hiking-years button.active {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: white;
+  border-color: transparent;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+
+.stat-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: -0.25rem 0 0;
+}
+
+.hiking-section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.trip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.84rem;
+}
+
+.trip-row:last-of-type {
+  border-bottom: none;
+}
+
+.trip-dates {
+  flex: 1;
+  color: var(--text);
+}
+
+.trip-nights {
+  min-width: 2.5rem;
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.trip-km {
+  min-width: 4rem;
+  text-align: right;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.trip-gain {
+  min-width: 4.5rem;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.hiking-section .empty {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  margin: 0;
+}
