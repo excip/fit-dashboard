@@ -15,8 +15,15 @@ pub struct YearQuery {
 }
 
 fn load_trips(state: &AppState) -> Result<Vec<cluster::Trip>, StatusCode> {
-    let path = state.garmin_db_path.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    let acts = store::load_activities(path).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let path = state.garmin_db_path.as_ref().ok_or_else(|| {
+        tracing::warn!("hiking endpoint unavailable: garmin db not configured");
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    // re-read per request is ~10ms on real data; caching deferred until Phase 2
+    let acts = store::load_activities(path).map_err(|e| {
+        tracing::error!(error = %e, "garmin.db load failed");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
     let settings = HikingSettings::default();          // Phase 3: load from DuckDB
     let overrides = HashMap::new();                     // Phase 3: load from DuckDB
     Ok(cluster::cluster_trips(&acts, &settings, &overrides))

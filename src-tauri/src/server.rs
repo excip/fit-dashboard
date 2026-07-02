@@ -759,7 +759,7 @@ fn extract_session(state: &AppState, headers: &HeaderMap) -> Result<String, Stat
     Ok(token)
 }
 
-pub fn ensure_session(state: &AppState, headers: &HeaderMap) -> Result<(), StatusCode> {
+pub(crate) fn ensure_session(state: &AppState, headers: &HeaderMap) -> Result<(), StatusCode> {
     extract_session(state, headers).map(|_| ())
 }
 
