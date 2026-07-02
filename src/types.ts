@@ -31,3 +31,28 @@ export type OverviewStats = {
   total_distance_m: number;
   total_duration_s: number;
 };
+
+export type TripCategory = "day_hike" | "weekend" | "thru_hike";
+
+export interface HikingOverview {
+  year: number | null;
+  total_distance_m: number;
+  total_steps: number;
+  total_gain: number;
+  total_loss: number;
+  hike_count: number;
+  trip_count: number;
+}
+
+export interface Trip {
+  id: number;
+  category: TripCategory;
+  start_date: string;
+  end_date: string;
+  nights: number;
+  activity_ids: number[];
+  total_distance_m: number;
+  total_gain: number;
+  total_loss: number;
+  total_steps: number;
+}

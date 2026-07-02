@@ -1,6 +1,6 @@
 import axios from "axios";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { Activity, OverviewStats, RecordPoint } from "../types";
+import type { Activity, HikingOverview, OverviewStats, RecordPoint, Trip, TripCategory } from "../types";
 
 type StorageInfo = {
   data_dir: string;
@@ -269,6 +269,16 @@ export const api = {
       return invoke<boolean>("set_donation_dismissed", { dismissed });
     }
     const res = await webClient.post("/supporter/donation", { dismissed });
+    return res.data;
+  },
+
+  async hikingOverview(year?: number): Promise<HikingOverview> {
+    const res = await webClient.get("/hiking/overview", { params: { year } });
+    return res.data;
+  },
+
+  async hikingTrips(category?: TripCategory, year?: number): Promise<Trip[]> {
+    const res = await webClient.get("/hiking/trips", { params: { category, year } });
     return res.data;
   }
 };
