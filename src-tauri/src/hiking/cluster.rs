@@ -41,10 +41,10 @@ fn derive_name(members: &[&HikeActivity]) -> Option<String> {
             }
         }
     }
-    names.dedup();
     match names.len() {
         0 => None,
         1 => Some(names[0].to_string()),
+        _ if names[0] == names[names.len() - 1] => Some(names[0].to_string()),
         _ => Some(format!("{} → {}", names[0], names[names.len() - 1])),
     }
 }
@@ -136,6 +136,7 @@ mod tests {
         assert_eq!(trips[0].category, TripCategory::ThruHike);
         assert_eq!(trips[0].nights, 4);
         assert_eq!(trips[0].activity_ids, vec![1,2,3,4,5]);
+        assert!(trips[0].name.is_none());
     }
 
     #[test]
@@ -261,5 +262,20 @@ mod tests {
         assert_eq!(trips[0].name.as_deref(), Some("Inyo County → Fresno County"));
         let trips2 = cluster_trips(&[a, b], &s, &o);
         assert_eq!(trips2[0].name.as_deref(), Some("Inyo County"));
+    }
+
+    #[test]
+    fn link_previous_cannot_resurrect_a_non_hike() {
+        // a walk with LinkPrevious stays excluded; it neither joins nor bridges
+        let hike = h(1, 2022, 5, 1, 34.0,-117.0, 34.0,-117.0, 500.0);
+        let mut walk = h(2, 2022, 5, 2, 47.0, 8.0, 47.0, 8.0, 20.0);
+        walk.distance_m = 4_500.0;
+        let hike2 = h(3, 2022, 5, 3, 46.0, 9.0, 46.0, 9.0, 500.0);
+        let (s, _) = defaults();
+        let mut o = HashMap::new();
+        o.insert(2, Override::LinkPrevious);
+        let trips = cluster_trips(&[hike, walk, hike2], &s, &o);
+        assert_eq!(trips.len(), 2);
+        assert!(trips.iter().all(|t| t.activity_ids.len() == 1));
     }
 }
