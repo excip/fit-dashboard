@@ -10,11 +10,12 @@ pub fn load_activities(garmin_db: &Path) -> Result<Vec<HikeActivity>> {
         garmin_db,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
+    // end coords fall back to start when the track has no end fix (avoids (0,0) islands)
     let mut stmt = conn.prepare(
         "SELECT activity_id, substr(start_time_local,1,10) AS d, activity_type,
                 COALESCE(distance_meters,0), COALESCE(elevation_gain,0), COALESCE(elevation_loss,0),
                 COALESCE(activity_steps,0), COALESCE(start_latitude,0), COALESCE(start_longitude,0),
-                COALESCE(end_latitude,0), COALESCE(end_longitude,0), max_elevation,
+                COALESCE(end_latitude, start_latitude), COALESCE(end_longitude, start_longitude), max_elevation,
                 location_name, COALESCE(duration_seconds,0)
          FROM activity
          WHERE activity_type IN ('hiking','walking','snow_shoe')
@@ -45,5 +46,7 @@ mod tests {
         let acts = load_activities(std::path::Path::new(&p)).unwrap();
         assert!(acts.len() > 100, "expected many activities, got {}", acts.len());
         assert!(acts.iter().any(|a| a.activity_type == "walking"));
+        // WHERE guard + end-coord fallback: no fabricated (0,0) coordinates
+        assert!(acts.iter().all(|a| a.start_lat != 0.0 && a.end_lat != 0.0));
     }
 }
