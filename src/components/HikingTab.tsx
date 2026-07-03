@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { HikingOverview, Trip, TripCategory } from "../types";
+import { HikingTripDetail } from "./HikingTripDetail";
 
 const KM = (m: number) => (m / 1000).toFixed(0);
 
-export function HikingTab() {
+type Props = { onOpenActivity?: (dashboardActivityId: number) => void };
+
+export function HikingTab({ onOpenActivity }: Props) {
   const [year, setYear] = useState<number | null>(null);
   const [ov, setOv] = useState<HikingOverview | null>(null);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -23,10 +28,21 @@ export function HikingTab() {
     return () => {
       cancelled = true;
     };
-  }, [year]);
+  }, [year, refreshKey]);
 
   const years = Array.from({ length: 2026 - 2017 + 1 }, (_, i) => 2017 + i);
   const byCat = (c: TripCategory) => trips.filter((t) => t.category === c);
+
+  if (selectedTripId != null) {
+    return (
+      <HikingTripDetail
+        tripId={selectedTripId}
+        onBack={() => { setSelectedTripId(null); setRefreshKey((k) => k + 1); }}
+        onTripChanged={(id) => { setSelectedTripId(id); setRefreshKey((k) => k + 1); }}
+        onOpenActivity={onOpenActivity}
+      />
+    );
+  }
 
   return (
     <div className="hiking-tab">
@@ -71,7 +87,8 @@ export function HikingTab() {
               : "Day hikes"}
           </h3>
           {byCat(cat).map((t) => (
-            <div key={t.id} className="trip-row">
+            <div key={t.id} className="trip-row clickable" onClick={() => setSelectedTripId(t.id)}>
+              <span className="trip-name">{t.name ?? "—"}</span>
               <span className="trip-dates">
                 {t.start_date}{t.nights > 0 ? ` → ${t.end_date}` : ""}
               </span>

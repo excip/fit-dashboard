@@ -1558,7 +1558,10 @@ export function Dashboard({ onLogout }: Props) {
           ) : tab === "compare" ? (
             <CompareCharts compareIds={compareIds} activities={activities} theme={theme} distanceUnit={distanceUnit} />
           ) : tab === "hiking" ? (
-            <HikingTab />
+            <HikingTab onOpenActivity={(id) => {
+              const a = activities.find((x) => x.id === id);
+              if (a) { void selectActivity(a); setTab("individual"); }
+            }} />
           ) : selectedActivity ? (
             <>
               <div className="detail-header">

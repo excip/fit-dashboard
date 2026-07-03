@@ -3270,3 +3270,17 @@ button:focus-visible {
   overflow: hidden;
   border: 1px solid var(--border);
 }
+
+.hiking-tab .trip-row.clickable { cursor: pointer; }
+.hiking-tab .trip-row.clickable:hover { background: var(--input-bg); }
+.hiking-tab .trip-name { flex: 1; font-weight: 600; color: var(--text); }
+.hiking-tab .trip-location { flex: 1; color: var(--text-muted); }
+.hiking-tab .hiking-detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.hiking-tab .hiking-detail-header h2 { margin: 0; font-size: 20px; }
+.hiking-tab .hiking-back { background: none; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; color: var(--text-muted); cursor: pointer; }
+.hiking-tab .hiking-rename { background: none; border: none; color: var(--text-muted); cursor: pointer; margin-left: 6px; }
+.hiking-tab .hiking-detail-actions { margin-left: auto; display: flex; gap: 8px; }
+.hiking-tab .hiking-detail-actions button { border: 1px solid var(--border); background: var(--input-bg); border-radius: 8px; padding: 4px 10px; cursor: pointer; color: var(--text); }
+.hiking-tab .hiking-name-edit { display: flex; gap: 6px; align-items: center; }
+.hiking-tab .hiking-superlatives { display: flex; gap: 18px; margin: 10px 0 14px; color: var(--text-muted); }
+.hiking-tab .hiking-recovery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
