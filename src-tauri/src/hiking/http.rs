@@ -6,7 +6,7 @@ use axum::{
     Json,
 };
 use crate::state::AppState;
-use crate::hiking::{HikingSettings, Override, store, cluster, aggregate};
+use crate::hiking::{HikingSettings, Override, store, cluster, aggregate, baseline};
 use crate::server::ensure_session;
 
 #[derive(serde::Deserialize)]
@@ -130,6 +130,8 @@ pub struct TripDetail {
     pub superlatives: aggregate::Superlatives,
     pub days: Vec<TripDay>,
     pub recovery: Vec<store::RecoveryDay>,
+    pub baselines: baseline::Baselines,
+    pub recovery_summary: baseline::RecoverySummary,
 }
 
 pub async fn hiking_trip_detail(
@@ -163,10 +165,25 @@ pub async fn hiking_trip_detail(
         })
     }).collect();
 
-    let recovery = store::load_recovery(&garmin_db_path, trip.start_date, trip.end_date).map_err(|e| {
+    // 56 pre-days feed the baseline; 22 post-days let the 2-consecutive
+    // recovery check reach day 21. The payload only carries +/-14 days.
+    let fetch_start = trip.start_date - chrono::Duration::days(56);
+    let fetch_end = trip.end_date + chrono::Duration::days(22);
+    let all_recovery = store::load_recovery(&garmin_db_path, fetch_start, fetch_end).map_err(|e| {
         tracing::error!(error = %e, "garmin.db recovery load failed");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
+    let trip_ranges: Vec<(chrono::NaiveDate, chrono::NaiveDate)> =
+        trips.iter().map(|t| (t.start_date, t.end_date)).collect();
+    let baselines = baseline::baselines(&all_recovery, &trip_ranges, trip.start_date);
+    let recovery_summary =
+        baseline::recovery_summary(&all_recovery, &baselines, trip.start_date, trip.end_date);
+    let win_start = (trip.start_date - chrono::Duration::days(14)).to_string();
+    let win_end = (trip.end_date + chrono::Duration::days(14)).to_string();
+    let recovery: Vec<store::RecoveryDay> = all_recovery
+        .into_iter()
+        .filter(|d| d.date.as_str() >= win_start.as_str() && d.date.as_str() <= win_end.as_str())
+        .collect();
 
     Ok(Json(TripDetail {
         merged,
@@ -174,6 +191,8 @@ pub async fn hiking_trip_detail(
         superlatives,
         days,
         recovery,
+        baselines,
+        recovery_summary,
         trip,
     }))
 }

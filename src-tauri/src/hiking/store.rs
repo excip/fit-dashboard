@@ -133,4 +133,17 @@ mod tests {
         assert_eq!(days.len(), 5);
         assert!(days.iter().any(|d| d.resting_hr.is_some()), "expected some resting HR data");
     }
+
+    #[test]
+    #[ignore] // needs a real garmin.db at GARMIN_DB_TEST
+    fn loads_training_readiness_from_real_db() {
+        // readiness data exists from 2022-10-06 onward
+        let p = std::env::var("GARMIN_DB_TEST").expect("set GARMIN_DB_TEST");
+        let days = load_recovery(
+            std::path::Path::new(&p),
+            chrono::NaiveDate::from_ymd_opt(2023, 6, 1).unwrap(),
+            chrono::NaiveDate::from_ymd_opt(2023, 6, 10).unwrap(),
+        ).unwrap();
+        assert!(days.iter().any(|d| d.training_readiness.is_some()));
+    }
 }
