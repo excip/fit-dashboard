@@ -75,6 +75,81 @@ pub fn baselines(
     }
 }
 
+/// Strain + bounce-back for one metric. peak_deviation is signed
+/// (value - baseline): positive for RHR, negative for HRV.
+/// days_to_recover: None = not back within 21 days of trip end.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MetricSummary {
+    pub peak_deviation: f64,
+    pub peak_trip_day: i64, // 1 = first trip day
+    pub days_to_recover: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct RecoverySummary {
+    pub resting_hr: Option<MetricSummary>,
+    pub hrv: Option<MetricSummary>,
+}
+
+fn metric_summary(
+    days: &[RecoveryDay],
+    baseline: Option<f64>,
+    trip_start: NaiveDate,
+    trip_end: NaiveDate,
+    get: &dyn Fn(&RecoveryDay) -> Option<f64>,
+    strains_up: bool,
+    recovered: &dyn Fn(f64, f64) -> bool,
+) -> Option<MetricSummary> {
+    let baseline = baseline?;
+    let mut peak: Option<(f64, i64)> = None; // (deviation, trip day)
+    for rd in days {
+        let dt = parse_date(&rd.date);
+        if dt < trip_start || dt > trip_end {
+            continue;
+        }
+        let Some(v) = get(rd) else { continue };
+        let dev = v - baseline;
+        let worse = match peak {
+            None => true,
+            Some((p, _)) => if strains_up { dev > p } else { dev < p },
+        };
+        if worse {
+            peak = Some((dev, (dt - trip_start).num_days() + 1));
+        }
+    }
+    let (peak_deviation, peak_trip_day) = peak?;
+
+    let value_on = |date: NaiveDate| -> Option<f64> {
+        days.iter().find(|rd| parse_date(&rd.date) == date).and_then(get)
+    };
+    let ok = |date: NaiveDate| value_on(date).map(|v| recovered(v, baseline)).unwrap_or(false);
+    let days_to_recover = (1..=21).find(|&i| {
+        let d0 = trip_end + Duration::days(i);
+        ok(d0) && ok(d0 + Duration::days(1))
+    });
+    Some(MetricSummary { peak_deviation, peak_trip_day, days_to_recover })
+}
+
+pub fn recovery_summary(
+    days: &[RecoveryDay],
+    baselines: &Baselines,
+    trip_start: NaiveDate,
+    trip_end: NaiveDate,
+) -> RecoverySummary {
+    RecoverySummary {
+        resting_hr: metric_summary(
+            days, baselines.resting_hr, trip_start, trip_end,
+            &|d| d.resting_hr.map(|v| v as f64), true,
+            &|v, b| v <= b + 2.0,
+        ),
+        hrv: metric_summary(
+            days, baselines.hrv_last_night_avg, trip_start, trip_end,
+            &|d| d.hrv_last_night_avg, false,
+            &|v, b| v >= b * 0.95,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +230,97 @@ mod tests {
             .collect();
         let b = baselines(&days, &[], d("2024-06-01"));
         assert_eq!(b.resting_hr, None);
+    }
+
+    /// 7 pre-trip days: rhr 50, hrv 60 -> baselines rhr=50.0, hrv=60.0
+    fn pre_days() -> Vec<RecoveryDay> {
+        (0..7)
+            .map(|i| day(&format!("2024-05-{:02}", 10 + i), Some(50), Some(60.0)))
+            .collect()
+    }
+
+    fn trip() -> (NaiveDate, NaiveDate) {
+        (d("2024-06-01"), d("2024-06-03"))
+    }
+
+    #[test]
+    fn rhr_peak_deviation_and_day() {
+        let mut days = pre_days();
+        days.push(day("2024-06-01", Some(55), None));
+        days.push(day("2024-06-02", Some(58), None));
+        days.push(day("2024-06-03", Some(56), None));
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        let rhr = s.resting_hr.expect("rhr summary");
+        assert_eq!(rhr.peak_deviation, 8.0);
+        assert_eq!(rhr.peak_trip_day, 2);
+    }
+
+    #[test]
+    fn days_to_recover_needs_two_consecutive_days() {
+        // tolerance: <= 50 + 2 = 52
+        let mut days = pre_days();
+        days.push(day("2024-06-02", Some(58), None));
+        days.push(day("2024-06-04", Some(55), None)); // +1: no
+        days.push(day("2024-06-05", Some(52), None)); // +2: ok, but +3 not ok
+        days.push(day("2024-06-06", Some(54), None)); // +3: no
+        days.push(day("2024-06-07", Some(51), None)); // +4: ok
+        days.push(day("2024-06-08", Some(52), None)); // +5: ok -> recovered at 4
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        assert_eq!(s.resting_hr.expect("rhr summary").days_to_recover, Some(4));
+    }
+
+    #[test]
+    fn not_recovered_within_21_days_is_none() {
+        let mut days = pre_days();
+        days.push(day("2024-06-02", Some(58), None));
+        for i in 4..=26 {
+            days.push(day(&format!("2024-06-{i:02}"), Some(60), None));
+        }
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        assert_eq!(s.resting_hr.expect("rhr summary").days_to_recover, None);
+    }
+
+    #[test]
+    fn hrv_strains_downward() {
+        // baseline 60, tolerance >= 57 (60 * 0.95)
+        let mut days = pre_days();
+        days.push(day("2024-06-01", None, Some(55.0)));
+        days.push(day("2024-06-02", None, Some(50.0)));
+        days.push(day("2024-06-03", None, Some(57.0)));
+        days.push(day("2024-06-04", None, Some(57.0))); // +1: ok
+        days.push(day("2024-06-05", None, Some(58.0))); // +2: ok -> recovered at 1
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        let hrv = s.hrv.expect("hrv summary");
+        assert_eq!(hrv.peak_deviation, -10.0);
+        assert_eq!(hrv.peak_trip_day, 2);
+        assert_eq!(hrv.days_to_recover, Some(1));
+    }
+
+    #[test]
+    fn no_baseline_means_no_summary() {
+        // no pre-trip data at all
+        let days = vec![day("2024-06-02", Some(58), Some(50.0))];
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        assert!(s.resting_hr.is_none());
+        assert!(s.hrv.is_none());
+    }
+
+    #[test]
+    fn no_during_trip_data_means_no_summary() {
+        let days = pre_days(); // baseline exists, but no trip-day values
+        let (start, end) = trip();
+        let b = baselines(&days, &[], start);
+        let s = recovery_summary(&days, &b, start, end);
+        assert!(s.resting_hr.is_none());
     }
 }
