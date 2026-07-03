@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { api } from "../lib/api";
-import type { RecordPoint, RecoveryDay, TripDetail } from "../types";
+import type { Baselines, RecordPoint, RecoveryDay, TripDetail } from "../types";
 import { TripMap } from "./TripMap";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -19,6 +19,7 @@ type ChartColors = {
   tooltipBg: string;
   tooltipBorder: string;
   tooltipText: string;
+  tripBand: string;
 };
 
 function recoveryChart(
@@ -26,7 +27,12 @@ function recoveryChart(
   series: Array<{ key: keyof RecoveryDay; label: string }>,
   title: string,
   colors: ChartColors,
+  baselines: Baselines,
+  tripStart: string,
+  tripEnd: string,
 ) {
+  const startIdx = recovery.findIndex((r) => r.date === tripStart);
+  const endIdx = recovery.findIndex((r) => r.date === tripEnd);
   return {
     title: { text: title, textStyle: { fontSize: 12, color: colors.axisColor }, left: 4, top: 2 },
     tooltip: {
@@ -42,13 +48,37 @@ function recoveryChart(
       axisLabel: { fontSize: 9, color: colors.axisColor },
     },
     yAxis: { type: "value", axisLabel: { fontSize: 9, color: colors.axisColor }, scale: true },
-    series: series.map((s) => ({
-      name: s.label,
-      type: "line",
-      connectNulls: true,
-      showSymbol: false,
-      data: recovery.map((r) => r[s.key] as number | null),
-    })),
+    series: series.map((s, i) => {
+      const base = baselines[s.key as keyof Baselines];
+      return {
+        name: s.label,
+        type: "line",
+        connectNulls: true,
+        showSymbol: false,
+        data: recovery.map((r) => r[s.key] as number | null),
+        // dashed at-home baseline for this metric
+        markLine:
+          base != null
+            ? {
+                silent: true,
+                symbol: "none",
+                lineStyle: { type: "dashed", opacity: 0.6 },
+                label: { show: false },
+                data: [{ yAxis: base }],
+              }
+            : undefined,
+        // shaded band over the trip days (first series only; +/-0.5 covers
+        // the full category slots so single-day trips still show a band)
+        markArea:
+          i === 0 && startIdx >= 0 && endIdx >= 0
+            ? {
+                silent: true,
+                itemStyle: { color: colors.tripBand },
+                data: [[{ xAxis: startIdx - 0.5 }, { xAxis: endIdx + 0.5 }]],
+              }
+            : undefined,
+      };
+    }),
     legend:
       series.length > 1
         ? { bottom: 0, textStyle: { fontSize: 9, color: colors.axisColor } }
@@ -105,6 +135,7 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
     tooltipBg: isDark ? "rgba(14, 22, 45, 0.95)" : "rgba(255, 255, 255, 0.95)",
     tooltipBorder: isDark ? "rgba(100, 140, 220, 0.2)" : "rgba(0, 0, 0, 0.08)",
     tooltipText: isDark ? "#e2e8f4" : "#0f172a",
+    tripBand: isDark ? "rgba(100, 140, 220, 0.10)" : "rgba(59, 130, 246, 0.08)",
   };
 
   if (!detail) {
@@ -300,6 +331,9 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               [{ key: "sleep_score", label: "Sleep score" }],
               "Sleep score",
               chartColors,
+              detail.baselines,
+              t.start_date,
+              t.end_date,
             )}
             style={{ height: 180 }}
           />
@@ -315,6 +349,9 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               ],
               "Resting HR + HRV",
               chartColors,
+              detail.baselines,
+              t.start_date,
+              t.end_date,
             )}
             style={{ height: 180 }}
           />
@@ -331,22 +368,30 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               ],
               "Body Battery + Stress",
               chartColors,
+              detail.baselines,
+              t.start_date,
+              t.end_date,
             )}
             style={{ height: 180 }}
           />
         </div>
-        <div className="panel">
-          <ReactECharts
-            notMerge
-            option={recoveryChart(
-              detail.recovery,
-              [{ key: "training_readiness", label: "Readiness" }],
-              "Training readiness",
-              chartColors,
-            )}
-            style={{ height: 180 }}
-          />
-        </div>
+        {detail.recovery.some((r) => r.training_readiness != null) && (
+          <div className="panel">
+            <ReactECharts
+              notMerge
+              option={recoveryChart(
+                detail.recovery,
+                [{ key: "training_readiness", label: "Readiness" }],
+                "Training readiness",
+                chartColors,
+                detail.baselines,
+                t.start_date,
+                t.end_date,
+              )}
+              style={{ height: 180 }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

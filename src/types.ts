@@ -82,6 +82,28 @@ export type RecoveryDay = {
   training_readiness: number | null;
 };
 
+export type Baselines = {
+  sleep_score: number | null;
+  sleep_seconds: number | null;
+  resting_hr: number | null;
+  hrv_last_night_avg: number | null;
+  body_battery_high: number | null;
+  body_battery_low: number | null;
+  avg_stress: number | null;
+  training_readiness: number | null;
+};
+
+export type MetricSummary = {
+  peak_deviation: number;
+  peak_trip_day: number;
+  days_to_recover: number | null;
+};
+
+export type RecoverySummary = {
+  resting_hr: MetricSummary | null;
+  hrv: MetricSummary | null;
+};
+
 export type Superlatives = {
   longest_day_m: number;
   biggest_climb_m: number;
@@ -95,4 +117,6 @@ export type TripDetail = {
   superlatives: Superlatives;
   days: TripDay[];
   recovery: RecoveryDay[];
+  baselines: Baselines;
+  recovery_summary: RecoverySummary;
 };
