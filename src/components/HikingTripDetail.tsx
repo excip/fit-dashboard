@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { api } from "../lib/api";
-import type { Baselines, RecordPoint, RecoveryDay, TripDetail } from "../types";
+import type { Baselines, MetricSummary, RecordPoint, RecoveryDay, TripDetail } from "../types";
 import { TripMap } from "./TripMap";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -84,6 +84,15 @@ function recoveryChart(
         ? { bottom: 0, textStyle: { fontSize: 9, color: colors.axisColor } }
         : undefined,
   };
+}
+
+function metricVerdict(label: string, m: MetricSummary, unit: string): string {
+  const sign = m.peak_deviation >= 0 ? "+" : "";
+  const recov =
+    m.days_to_recover != null
+      ? `back to baseline ${m.days_to_recover} day${m.days_to_recover === 1 ? "" : "s"} after the trip`
+      : "not back to baseline within 21 days";
+  return `${label} peaked ${sign}${m.peak_deviation.toFixed(0)} ${unit} vs baseline (day ${m.peak_trip_day}) · ${recov}`;
 }
 
 export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity }: Props) {
@@ -321,6 +330,18 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
           </div>
         ))}
       </section>
+
+      {(detail.recovery_summary.resting_hr != null ||
+        detail.recovery_summary.hrv != null) && (
+        <div className="hiking-verdict">
+          {detail.recovery_summary.resting_hr != null && (
+            <span>{metricVerdict("Resting HR", detail.recovery_summary.resting_hr, "bpm")}</span>
+          )}
+          {detail.recovery_summary.hrv != null && (
+            <span>{metricVerdict("HRV", detail.recovery_summary.hrv, "ms")}</span>
+          )}
+        </div>
+      )}
 
       <div className="hiking-recovery">
         <div className="panel">
