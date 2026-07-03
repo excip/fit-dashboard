@@ -23,13 +23,25 @@ fn parse_override(kind: &str) -> Option<Override> {
     }
 }
 
-fn load_overrides(state: &AppState) -> HashMap<i64, Override> {
-    state.db.hiking_overrides().unwrap_or_default().into_iter()
-        .filter_map(|(id, k)| parse_override(&k).map(|o| (id, o)))
-        .collect()
+fn load_overrides(state: &AppState) -> Result<HashMap<i64, Override>, StatusCode> {
+    state.db.hiking_overrides().map_err(|e| {
+        tracing::error!(error = %e, "failed to load hiking overrides");
+        StatusCode::INTERNAL_SERVER_ERROR
+    }).map(|rows| {
+        rows.into_iter()
+            .filter_map(|(id, k)| parse_override(&k).map(|o| (id, o)))
+            .collect()
+    })
 }
 
-fn load_acts_and_trips(state: &AppState) -> Result<(Vec<crate::hiking::HikeActivity>, Vec<cluster::Trip>), StatusCode> {
+struct HikingData {
+    acts: Vec<crate::hiking::HikeActivity>,
+    trips: Vec<cluster::Trip>,
+    overrides: HashMap<i64, Override>,
+    garmin_db_path: std::sync::Arc<std::path::PathBuf>,
+}
+
+fn load_acts_and_trips(state: &AppState) -> Result<HikingData, StatusCode> {
     let path = state.garmin_db_path.as_ref().ok_or_else(|| {
         tracing::warn!("hiking endpoint unavailable: garmin db not configured");
         StatusCode::SERVICE_UNAVAILABLE
@@ -40,18 +52,21 @@ fn load_acts_and_trips(state: &AppState) -> Result<(Vec<crate::hiking::HikeActiv
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     let settings = HikingSettings::default();          // Phase 3: load from DuckDB
-    let overrides = load_overrides(state);
+    let overrides = load_overrides(state)?;
     let mut trips = cluster::cluster_trips(&acts, &settings, &overrides);
-    for (id, name) in state.db.hiking_trip_names().unwrap_or_default() {
+    for (id, name) in state.db.hiking_trip_names().map_err(|e| {
+        tracing::error!(error = %e, "failed to load hiking trip names");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })? {
         if let Some(t) = trips.iter_mut().find(|t| t.id == id) {
             t.name = Some(name);
         }
     }
-    Ok((acts, trips))
+    Ok(HikingData { acts, trips, overrides, garmin_db_path: path.clone() })
 }
 
 fn load_trips(state: &AppState) -> Result<Vec<cluster::Trip>, StatusCode> {
-    Ok(load_acts_and_trips(state)?.1)
+    Ok(load_acts_and_trips(state)?.trips)
 }
 
 pub async fn hiking_overview(
@@ -123,11 +138,10 @@ pub async fn hiking_trip_detail(
     axum::extract::Path(trip_id): axum::extract::Path<i64>,
 ) -> Result<Json<TripDetail>, StatusCode> {
     ensure_session(&state, &headers)?;
-    let (acts, trips) = load_acts_and_trips(&state)?;
+    let HikingData { acts, trips, overrides, garmin_db_path } = load_acts_and_trips(&state)?;
     let idx = trips.iter().position(|t| t.id == trip_id).ok_or(StatusCode::NOT_FOUND)?;
     let trip = trips[idx].clone();
 
-    let overrides = load_overrides(&state);
     let merged = trip.activity_ids.iter()
         .any(|id| matches!(overrides.get(id), Some(Override::LinkPrevious)));
 
@@ -149,8 +163,7 @@ pub async fn hiking_trip_detail(
         })
     }).collect();
 
-    let path = state.garmin_db_path.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    let recovery = store::load_recovery(path, trip.start_date, trip.end_date).map_err(|e| {
+    let recovery = store::load_recovery(&garmin_db_path, trip.start_date, trip.end_date).map_err(|e| {
         tracing::error!(error = %e, "garmin.db recovery load failed");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
@@ -174,7 +187,7 @@ pub async fn hiking_merge_previous(
     axum::extract::Path(trip_id): axum::extract::Path<i64>,
 ) -> Result<Json<MergeResult>, StatusCode> {
     ensure_session(&state, &headers)?;
-    let (_, trips) = load_acts_and_trips(&state)?;
+    let trips = load_acts_and_trips(&state)?.trips;
     let idx = trips.iter().position(|t| t.id == trip_id).ok_or(StatusCode::NOT_FOUND)?;
     if idx == 0 {
         return Err(StatusCode::BAD_REQUEST); // nothing before this trip
@@ -193,9 +206,8 @@ pub async fn hiking_split_trip(
     axum::extract::Path(trip_id): axum::extract::Path<i64>,
 ) -> Result<Json<MergeResult>, StatusCode> {
     ensure_session(&state, &headers)?;
-    let (_, trips) = load_acts_and_trips(&state)?;
+    let HikingData { trips, overrides, .. } = load_acts_and_trips(&state)?;
     let trip = trips.iter().find(|t| t.id == trip_id).ok_or(StatusCode::NOT_FOUND)?;
-    let overrides = load_overrides(&state);
     for id in &trip.activity_ids {
         if matches!(overrides.get(id), Some(Override::LinkPrevious)) {
             state.db.set_hiking_override(*id, None).map_err(|e| {
