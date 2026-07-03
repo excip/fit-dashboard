@@ -1,6 +1,6 @@
 import axios from "axios";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { Activity, HikingOverview, OverviewStats, RecordPoint, Trip, TripCategory } from "../types";
+import type { Activity, HikingOverview, OverviewStats, RecordPoint, Trip, TripCategory, TripDetail } from "../types";
 
 type StorageInfo = {
   data_dir: string;
@@ -282,5 +282,25 @@ export const api = {
     if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
     const res = await webClient.get("/hiking/trips", { params: { category, year } });
     return res.data;
+  },
+
+  async hikingTrip(tripId: number): Promise<TripDetail> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    return (await webClient.get(`/hiking/trip/${tripId}`)).data;
+  },
+
+  async hikingMergePrevious(tripId: number): Promise<{ trip_id: number }> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    return (await webClient.post(`/hiking/trip/${tripId}/merge-previous`)).data;
+  },
+
+  async hikingSplitTrip(tripId: number): Promise<{ trip_id: number }> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    return (await webClient.post(`/hiking/trip/${tripId}/split`)).data;
+  },
+
+  async hikingSetTripName(tripId: number, name: string | null): Promise<void> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    await webClient.put(`/hiking/trip-name`, { trip_id: tripId, name });
   }
 };

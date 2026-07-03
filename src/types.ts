@@ -47,6 +47,7 @@ export type HikingOverview = {
 export type Trip = {
   id: number;
   category: TripCategory;
+  name: string | null;
   start_date: string;
   end_date: string;
   nights: number;
@@ -55,4 +56,43 @@ export type Trip = {
   total_gain: number;
   total_loss: number;
   total_steps: number;
+};
+
+export type TripDay = {
+  garmin_activity_id: number;
+  dashboard_activity_id: number | null;
+  date: string;
+  distance_m: number;
+  elevation_gain: number;
+  elevation_loss: number;
+  steps: number;
+  duration_s: number;
+  location_name: string | null;
+};
+
+export type RecoveryDay = {
+  date: string;
+  sleep_score: number | null;
+  sleep_seconds: number | null;
+  resting_hr: number | null;
+  hrv_last_night_avg: number | null;
+  body_battery_high: number | null;
+  body_battery_low: number | null;
+  avg_stress: number | null;
+  training_readiness: number | null;
+};
+
+export type Superlatives = {
+  longest_day_m: number;
+  biggest_climb_m: number;
+  highest_point_m: number | null;
+};
+
+export type TripDetail = {
+  trip: Trip;
+  merged: boolean;
+  has_previous: boolean;
+  superlatives: Superlatives;
+  days: TripDay[];
+  recovery: RecoveryDay[];
 };
