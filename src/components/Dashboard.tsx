@@ -12,7 +12,6 @@ import { OverviewWeeklyTrend } from "./OverviewWeeklyTrend";
 import { OverviewActivityTable } from "./OverviewActivityTable";
 import { DatePickerPopover } from "./DatePickerPopover";
 import { DateRange } from "react-day-picker";
-import { DonationBanner } from "./DonationBanner";
 import { SettingsPanel } from "./SettingsPanel";
 import { HikingTab } from "./HikingTab";
 import { api } from "../lib/api";
@@ -314,7 +313,6 @@ export function Dashboard({ onLogout }: Props) {
   const [sortBy, setSortBy] = useState<"date" | "name" | "duration">("date");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; activityId: number; activityName: string;
   } | null>(null);
@@ -1517,12 +1515,6 @@ export function Dashboard({ onLogout }: Props) {
 
         {/* ── Main Content ───────────────────────────────────── */}
         <main className="main-content">
-          <DonationBanner
-            supporterBadge={supporterBadge}
-            dismissed={bannerDismissed}
-            onDismiss={() => setBannerDismissed(true)}
-          />
-
           {tab === "overview" ? (
             activities.length === 0 ? (
               <div className="empty-state">
