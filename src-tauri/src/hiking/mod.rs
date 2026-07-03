@@ -34,7 +34,11 @@ pub struct HikingSettings {
     pub home_lon: f64,
     pub min_gain_m: f64,
     pub min_distance_m: f64,
+    /// Spatial radius for linking when there is ≥1 rest day between hikes.
     pub link_radius_m: f64,
+    /// Spatial radius for linking consecutive-day hikes (0 rest days).
+    /// Larger to handle trails where transport connects stages (e.g. Peaks of the Balkans).
+    pub link_radius_consecutive_m: f64,
     pub max_rest_days: i64,
 }
 
@@ -46,6 +50,7 @@ impl Default for HikingSettings {
             min_gain_m: 250.0,
             min_distance_m: 12_000.0,
             link_radius_m: 7_500.0,
+            link_radius_consecutive_m: 25_000.0,
             max_rest_days: 4,
         }
     }

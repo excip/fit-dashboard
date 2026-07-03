@@ -68,9 +68,10 @@ pub fn cluster_trips(
             || trips.last().map_or(false, |cur| {
                 let prev = *cur.last().unwrap();
                 let gap = (h.date - prev.date).num_days();
-                let near = haversine_m(prev.end_lat, prev.end_lon, h.start_lat, h.start_lon)
-                    <= settings.link_radius_m;
-                // gap of 0 (same day) up to max_rest_days rest days => <= max_rest_days + 1
+                // Consecutive days (gap=1) use a larger radius: trails with transport
+                // between stages (e.g. Peaks of the Balkans, TMB) can have GPS gaps >7.5 km.
+                let radius = if gap == 1 { settings.link_radius_consecutive_m } else { settings.link_radius_m };
+                let near = haversine_m(prev.end_lat, prev.end_lon, h.start_lat, h.start_lon) <= radius;
                 gap >= 0 && gap <= settings.max_rest_days + 1 && near
             });
         if joins {
@@ -262,6 +263,30 @@ mod tests {
         assert_eq!(trips[0].name.as_deref(), Some("Inyo County → Fresno County"));
         let trips2 = cluster_trips(&[a, b], &s, &o);
         assert_eq!(trips2[0].name.as_deref(), Some("Inyo County"));
+    }
+
+    #[test]
+    fn consecutive_days_with_transport_gap_merge() {
+        // Consecutive days 20 km apart (e.g. Peaks of the Balkans stage with bus transfer).
+        // The 7.5 km strict radius would split these; the 25 km consecutive radius must join them.
+        let acts = vec![
+            h(1, 2021, 8, 30, 42.6103, 20.0376, 42.6103, 20.0376, 800.0),
+            h(2, 2021, 8, 31, 42.5215, 19.7862, 42.5215, 19.7862, 900.0),
+        ];
+        let (s, o) = defaults();
+        // ~22.8 km gap — must merge with consecutive radius (25 km), not the strict radius (7.5 km)
+        assert_eq!(cluster_trips(&acts, &s, &o).len(), 1);
+    }
+
+    #[test]
+    fn rest_day_gap_still_uses_strict_radius() {
+        // One rest day between hikes 20 km apart => should NOT merge (uses 7.5 km radius).
+        let acts = vec![
+            h(1, 2021, 8, 30, 42.6103, 20.0376, 42.6103, 20.0376, 800.0),
+            h(2, 2021, 9,  1, 42.5215, 19.7862, 42.5215, 19.7862, 900.0), // 2-day gap = 1 rest day
+        ];
+        let (s, o) = defaults();
+        assert_eq!(cluster_trips(&acts, &s, &o).len(), 2);
     }
 
     #[test]
