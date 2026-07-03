@@ -3284,3 +3284,4 @@ button:focus-visible {
 .hiking-tab .hiking-name-edit { display: flex; gap: 6px; align-items: center; }
 .hiking-tab .hiking-superlatives { display: flex; gap: 18px; margin: 10px 0 14px; color: var(--text-muted); }
 .hiking-tab .hiking-recovery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
+.hiking-tab .hiking-error { color: var(--danger); margin: 8px 0; font-size: 0.85rem; }

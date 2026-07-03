@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { api } from "../lib/api";
 import type { RecordPoint, RecoveryDay, TripDetail } from "../types";
 import { TripMap } from "./TripMap";
+import { useSettingsStore } from "../stores/settingsStore";
 
 const KM = (m: number) => (m / 1000).toFixed(0);
 
@@ -13,21 +14,34 @@ type Props = {
   onOpenActivity?: (dashboardActivityId: number) => void;
 };
 
+type ChartColors = {
+  axisColor: string;
+  tooltipBg: string;
+  tooltipBorder: string;
+  tooltipText: string;
+};
+
 function recoveryChart(
   recovery: RecoveryDay[],
   series: Array<{ key: keyof RecoveryDay; label: string }>,
   title: string,
+  colors: ChartColors,
 ) {
   return {
-    title: { text: title, textStyle: { fontSize: 12 }, left: 4, top: 2 },
-    tooltip: { trigger: "axis" },
+    title: { text: title, textStyle: { fontSize: 12, color: colors.axisColor }, left: 4, top: 2 },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: colors.tooltipBg,
+      borderColor: colors.tooltipBorder,
+      textStyle: { color: colors.tooltipText },
+    },
     grid: { left: 36, right: 12, top: 30, bottom: 20 },
     xAxis: {
       type: "category",
       data: recovery.map((r) => r.date.slice(5)),
-      axisLabel: { fontSize: 9 },
+      axisLabel: { fontSize: 9, color: colors.axisColor },
     },
-    yAxis: { type: "value", axisLabel: { fontSize: 9 }, scale: true },
+    yAxis: { type: "value", axisLabel: { fontSize: 9, color: colors.axisColor }, scale: true },
     series: series.map((s) => ({
       name: s.label,
       type: "line",
@@ -35,19 +49,34 @@ function recoveryChart(
       showSymbol: false,
       data: recovery.map((r) => r[s.key] as number | null),
     })),
-    legend: series.length > 1 ? { bottom: 0, textStyle: { fontSize: 9 } } : undefined,
+    legend:
+      series.length > 1
+        ? { bottom: 0, textStyle: { fontSize: 9, color: colors.axisColor } }
+        : undefined,
   };
 }
 
 export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity }: Props) {
+  const theme = useSettingsStore((s) => s.theme);
   const [detail, setDetail] = useState<TripDetail | null>(null);
   const [tracks, setTracks] = useState<RecordPoint[][]>([]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const load = useCallback(() => {
+  // When tripId changes reset to Loading state immediately (prevents stale-view interactions)
+  useEffect(() => {
+    setDetail(null);
+    setTracks([]);
+    setError(null);
+  }, [tripId]);
+
+  // Cancellable fetch — reruns on tripId change or explicit reload
+  useEffect(() => {
     let cancelled = false;
+    setError(null);
     api
       .hikingTrip(tripId)
       .then((d) => {
@@ -63,34 +92,56 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
         });
       })
       .catch(() => {
-        if (!cancelled) setDetail(null);
+        if (!cancelled) setError("Failed to load trip details.");
       });
     return () => {
       cancelled = true;
     };
-  }, [tripId]);
+  }, [tripId, reloadKey]);
 
-  useEffect(() => load(), [load]);
+  const isDark = theme === "dark";
+  const chartColors: ChartColors = {
+    axisColor: isDark ? "#8899b8" : "#64748b",
+    tooltipBg: isDark ? "rgba(14, 22, 45, 0.95)" : "rgba(255, 255, 255, 0.95)",
+    tooltipBorder: isDark ? "rgba(100, 140, 220, 0.2)" : "rgba(0, 0, 0, 0.08)",
+    tooltipText: isDark ? "#e2e8f4" : "#0f172a",
+  };
 
-  if (!detail)
+  if (!detail) {
     return (
       <div className="hiking-tab">
         <button className="hiking-back" onClick={onBack}>
           ← Back
         </button>
-        <p className="empty">Loading…</p>
+        {error ? (
+          <>
+            <div className="hiking-error">{error}</div>
+            <button onClick={() => setReloadKey((k) => k + 1)}>Retry</button>
+          </>
+        ) : (
+          <p className="empty">Loading…</p>
+        )}
       </div>
     );
+  }
 
   const t = detail.trip;
   const title =
     t.name ?? `${t.start_date}${t.nights > 0 ? ` → ${t.end_date}` : ""}`;
 
   async function saveName() {
+    if (busy) return;
     const name = nameDraft.trim();
-    await api.hikingSetTripName(t.id, name.length > 0 ? name : null);
-    setEditingName(false);
-    load();
+    setBusy(true);
+    try {
+      await api.hikingSetTripName(t.id, name.length > 0 ? name : null);
+      setEditingName(false);
+      setReloadKey((k) => k + 1);
+    } catch {
+      setError("Failed to save trip name.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function mergePrevious() {
@@ -98,6 +149,8 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
     try {
       const r = await api.hikingMergePrevious(t.id);
       onTripChanged(r.trip_id);
+    } catch {
+      setError("Failed to merge trip.");
     } finally {
       setBusy(false);
     }
@@ -108,6 +161,8 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
     try {
       const r = await api.hikingSplitTrip(t.id);
       onTripChanged(r.trip_id);
+    } catch {
+      setError("Failed to split trip.");
     } finally {
       setBusy(false);
     }
@@ -130,8 +185,9 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               }}
               placeholder="Trip name"
               autoFocus
+              disabled={busy}
             />
-            <button onClick={() => void saveName()}>Save</button>
+            <button onClick={() => void saveName()} disabled={busy}>Save</button>
             <button onClick={() => setEditingName(false)}>Cancel</button>
           </span>
         ) : (
@@ -170,6 +226,8 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
           )}
         </span>
       </div>
+
+      {error && <div className="hiking-error">{error}</div>}
 
       <div className="hiking-stats">
         <div className="stat-card">
@@ -241,6 +299,7 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               detail.recovery,
               [{ key: "sleep_score", label: "Sleep score" }],
               "Sleep score",
+              chartColors,
             )}
             style={{ height: 180 }}
           />
@@ -255,6 +314,7 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
                 { key: "hrv_last_night_avg", label: "HRV" },
               ],
               "Resting HR + HRV",
+              chartColors,
             )}
             style={{ height: 180 }}
           />
@@ -270,6 +330,7 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
                 { key: "avg_stress", label: "Stress" },
               ],
               "Body Battery + Stress",
+              chartColors,
             )}
             style={{ height: 180 }}
           />
@@ -281,6 +342,7 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               detail.recovery,
               [{ key: "training_readiness", label: "Readiness" }],
               "Training readiness",
+              chartColors,
             )}
             style={{ height: 180 }}
           />
