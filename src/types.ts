@@ -68,6 +68,7 @@ export type TripDay = {
   steps: number;
   duration_s: number;
   location_name: string | null;
+  custom_name: string | null;
 };
 
 export type RecoveryDay = {

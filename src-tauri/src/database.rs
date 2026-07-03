@@ -151,6 +151,11 @@ impl Database {
                 name VARCHAR NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS hiking_activity_names (
+                activity_id BIGINT PRIMARY KEY,
+                name VARCHAR NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS file_hash_blacklist (
                 file_hash VARCHAR PRIMARY KEY,
                 created_at TIMESTAMP DEFAULT now()
@@ -660,6 +665,10 @@ mod tests {
         assert_eq!(db.hiking_trip_names().unwrap(), vec![(42, "PCT 2022".to_string())]);
         db.set_hiking_trip_name(42, None).unwrap();
         assert!(db.hiking_trip_names().unwrap().is_empty());
+        db.set_hiking_activity_name(42, Some("Valbona → Theth")).unwrap();
+        assert_eq!(db.hiking_activity_names().unwrap(), vec![(42, "Valbona → Theth".to_string())]);
+        db.set_hiking_activity_name(42, None).unwrap();
+        assert!(db.hiking_activity_names().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 }
@@ -805,6 +814,36 @@ impl Database {
                 conn.execute(
                     "INSERT INTO hiking_trip_names (trip_id, name) VALUES (?1, ?2)",
                     params![trip_id, n],
+                )?;
+            }
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn hiking_activity_names(&self) -> Result<Vec<(i64, String)>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare("SELECT activity_id, name FROM hiking_activity_names")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_hiking_activity_name(&self, activity_id: i64, name: Option<&str>) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            // DuckDB doesn't support INSERT OR REPLACE; delete then insert
+            conn.execute(
+                "DELETE FROM hiking_activity_names WHERE activity_id = ?1",
+                params![activity_id],
+            )?;
+            if let Some(n) = name {
+                conn.execute(
+                    "INSERT INTO hiking_activity_names (activity_id, name) VALUES (?1, ?2)",
+                    params![activity_id, n],
                 )?;
             }
         }

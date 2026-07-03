@@ -58,6 +58,7 @@ pub fn app(state: AppState) -> Router {
         .route("/api/hiking/trip/{id}/merge-previous", post(crate::hiking::http::hiking_merge_previous))
         .route("/api/hiking/trip/{id}/split", post(crate::hiking::http::hiking_split_trip))
         .route("/api/hiking/trip-name", put(crate::hiking::http::hiking_set_trip_name))
+        .route("/api/hiking/activity-name", put(crate::hiking::http::hiking_set_activity_name))
         .route("/api/records/{id}", get(records))
         .route("/api/supporter/verify", post(verify_supporter_code))
         .route("/api/supporter/status", get(get_supporter_status).post(set_supporter_status))

@@ -13,6 +13,22 @@ export function HikingTab({ onOpenActivity }: Props) {
   const [trips, setTrips] = useState<Trip[]>([]);
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [editingTripId, setEditingTripId] = useState<number | null>(null);
+  const [tripNameDraft, setTripNameDraft] = useState("");
+  const [savingName, setSavingName] = useState(false);
+
+  async function saveTripName(tripId: number) {
+    if (savingName) return;
+    const name = tripNameDraft.trim();
+    setSavingName(true);
+    try {
+      await api.hikingSetTripName(tripId, name.length > 0 ? name : null);
+      setEditingTripId(null);
+      setRefreshKey((k) => k + 1);
+    } finally {
+      setSavingName(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -86,17 +102,55 @@ export function HikingTab({ onOpenActivity }: Props) {
               ? "Weekend trips (1–2 nights)"
               : "Day hikes"}
           </h3>
-          {byCat(cat).map((t) => (
-            <div key={t.id} className="trip-row clickable" onClick={() => setSelectedTripId(t.id)}>
-              <span className="trip-name">{t.name ?? "—"}</span>
-              <span className="trip-dates">
-                {t.start_date}{t.nights > 0 ? ` → ${t.end_date}` : ""}
-              </span>
-              <span className="trip-nights">{t.nights > 0 ? `${t.nights}n` : "—"}</span>
-              <span className="trip-km">{KM(t.total_distance_m)} km</span>
-              <span className="trip-gain">▲{Math.round(t.total_gain)}</span>
-            </div>
-          ))}
+          {byCat(cat).map((t) => {
+            const editing = editingTripId === t.id;
+            return (
+              <div
+                key={t.id}
+                className={`trip-row${editing ? "" : " clickable"}`}
+                onClick={() => { if (!editing) setSelectedTripId(t.id); }}
+              >
+                {editing ? (
+                  <span className="hiking-name-edit trip-name" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      value={tripNameDraft}
+                      onChange={(e) => setTripNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void saveTripName(t.id);
+                        if (e.key === "Escape") setEditingTripId(null);
+                      }}
+                      placeholder="Trip name"
+                      autoFocus
+                      disabled={savingName}
+                    />
+                    <button onClick={() => void saveTripName(t.id)} disabled={savingName}>Save</button>
+                    <button onClick={() => setEditingTripId(null)}>Cancel</button>
+                  </span>
+                ) : (
+                  <span className="trip-name">
+                    {t.name ?? "—"}
+                    <button
+                      className="hiking-rename"
+                      title="Rename trip"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTripNameDraft(t.name ?? "");
+                        setEditingTripId(t.id);
+                      }}
+                    >
+                      ✎
+                    </button>
+                  </span>
+                )}
+                <span className="trip-dates">
+                  {t.start_date}{t.nights > 0 ? ` → ${t.end_date}` : ""}
+                </span>
+                <span className="trip-nights">{t.nights > 0 ? `${t.nights}n` : "—"}</span>
+                <span className="trip-km">{KM(t.total_distance_m)} km</span>
+                <span className="trip-gain">▲{Math.round(t.total_gain)}</span>
+              </div>
+            );
+          })}
           {byCat(cat).length === 0 && <p className="empty">None</p>}
         </section>
       ))}

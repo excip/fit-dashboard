@@ -101,6 +101,8 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
   const [tracks, setTracks] = useState<RecordPoint[][]>([]);
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [editingDayId, setEditingDayId] = useState<number | null>(null);
+  const [dayNameDraft, setDayNameDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -179,6 +181,21 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
       setReloadKey((k) => k + 1);
     } catch {
       setError("Failed to save trip name.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveDayName(garminActivityId: number) {
+    if (busy) return;
+    const name = dayNameDraft.trim();
+    setBusy(true);
+    try {
+      await api.hikingSetActivityName(garminActivityId, name.length > 0 ? name : null);
+      setEditingDayId(null);
+      setReloadKey((k) => k + 1);
+    } catch {
+      setError("Failed to save hike name.");
     } finally {
       setBusy(false);
     }
@@ -315,20 +332,55 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
 
       <section className="hiking-section panel">
         <h3>Days</h3>
-        {detail.days.map((d) => (
-          <div
-            key={d.garmin_activity_id}
-            className={`trip-row${d.dashboard_activity_id != null ? " clickable" : ""}`}
-            onClick={() => {
-              if (d.dashboard_activity_id != null) onOpenActivity?.(d.dashboard_activity_id);
-            }}
-          >
-            <span className="trip-dates">{d.date}</span>
-            <span className="trip-location">{d.location_name ?? ""}</span>
-            <span className="trip-km">{(d.distance_m / 1000).toFixed(1)} km</span>
-            <span className="trip-gain">▲{Math.round(d.elevation_gain)}</span>
-          </div>
-        ))}
+        {detail.days.map((d) => {
+          const editing = editingDayId === d.garmin_activity_id;
+          const displayName = d.custom_name ?? d.location_name ?? "";
+          return (
+            <div
+              key={d.garmin_activity_id}
+              className={`trip-row${!editing && d.dashboard_activity_id != null ? " clickable" : ""}`}
+              onClick={() => {
+                if (!editing && d.dashboard_activity_id != null) onOpenActivity?.(d.dashboard_activity_id);
+              }}
+            >
+              <span className="trip-dates">{d.date}</span>
+              {editing ? (
+                <span className="hiking-name-edit trip-location" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    value={dayNameDraft}
+                    onChange={(e) => setDayNameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveDayName(d.garmin_activity_id);
+                      if (e.key === "Escape") setEditingDayId(null);
+                    }}
+                    placeholder={d.location_name ?? "Hike name"}
+                    autoFocus
+                    disabled={busy}
+                  />
+                  <button onClick={() => void saveDayName(d.garmin_activity_id)} disabled={busy}>Save</button>
+                  <button onClick={() => setEditingDayId(null)}>Cancel</button>
+                </span>
+              ) : (
+                <span className="trip-location">
+                  {displayName}
+                  <button
+                    className="hiking-rename"
+                    title="Rename hike"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDayNameDraft(d.custom_name ?? "");
+                      setEditingDayId(d.garmin_activity_id);
+                    }}
+                  >
+                    ✎
+                  </button>
+                </span>
+              )}
+              <span className="trip-km">{(d.distance_m / 1000).toFixed(1)} km</span>
+              <span className="trip-gain">▲{Math.round(d.elevation_gain)}</span>
+            </div>
+          );
+        })}
       </section>
 
       {(detail.recovery_summary.resting_hr != null ||

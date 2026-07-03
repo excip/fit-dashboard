@@ -120,6 +120,7 @@ pub struct TripDay {
     pub steps: i64,
     pub duration_s: f64,
     pub location_name: Option<String>,
+    pub custom_name: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -149,6 +150,11 @@ pub async fn hiking_trip_detail(
 
     let superlatives = aggregate::superlatives(&trip, &acts);
 
+    let activity_names: HashMap<i64, String> = state.db.hiking_activity_names().map_err(|e| {
+        tracing::error!(error = %e, "failed to load hiking activity names");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?.into_iter().collect();
+
     let days: Vec<TripDay> = trip.activity_ids.iter().filter_map(|id| {
         acts.iter().find(|a| a.activity_id == *id).map(|a| TripDay {
             garmin_activity_id: a.activity_id,
@@ -162,6 +168,7 @@ pub async fn hiking_trip_detail(
             steps: a.steps,
             duration_s: a.duration_s,
             location_name: a.location_name.clone(),
+            custom_name: activity_names.get(&a.activity_id).cloned(),
         })
     }).collect();
 
@@ -250,6 +257,23 @@ pub async fn hiking_set_trip_name(
     let name = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
     state.db.set_hiking_trip_name(body.trip_id, name).map_err(|e| {
         tracing::error!(error = %e, "failed to store trip name");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Deserialize)]
+pub struct ActivityNameBody { pub activity_id: i64, pub name: Option<String> }
+
+pub async fn hiking_set_activity_name(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ActivityNameBody>,
+) -> Result<StatusCode, StatusCode> {
+    ensure_session(&state, &headers)?;
+    let name = body.name.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    state.db.set_hiking_activity_name(body.activity_id, name).map_err(|e| {
+        tracing::error!(error = %e, "failed to store activity name");
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(StatusCode::NO_CONTENT)
