@@ -4,7 +4,7 @@ use axum::{
     extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, patch, post},
+    routing::{get, patch, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -54,6 +54,10 @@ pub fn app(state: AppState) -> Router {
         .route("/api/overview", get(overview))
         .route("/api/hiking/overview", get(crate::hiking::http::hiking_overview))
         .route("/api/hiking/trips", get(crate::hiking::http::hiking_trips))
+        .route("/api/hiking/trip/{id}", get(crate::hiking::http::hiking_trip_detail))
+        .route("/api/hiking/trip/{id}/merge-previous", post(crate::hiking::http::hiking_merge_previous))
+        .route("/api/hiking/trip/{id}/split", post(crate::hiking::http::hiking_split_trip))
+        .route("/api/hiking/trip-name", put(crate::hiking::http::hiking_set_trip_name))
         .route("/api/records/{id}", get(records))
         .route("/api/supporter/verify", post(verify_supporter_code))
         .route("/api/supporter/status", get(get_supporter_status).post(set_supporter_status))
