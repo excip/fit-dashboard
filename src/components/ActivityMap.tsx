@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import maplibregl, { type StyleSpecification } from "maplibre-gl";
+import maplibregl from "maplibre-gl";
 import type { RecordPoint } from "../types";
 import type { MapStyle } from "../stores/settingsStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { convertElevationMeters, convertSpeedKmh, elevationLabel, speedLabel } from "../lib/units";
 import { useTranslation } from "../lib/i18n";
+import { BASEMAPS, styleFromMap } from "../lib/mapStyle";
 
 type Props = {
   records: RecordPoint[];
@@ -32,46 +33,6 @@ const IconPause = () => (
 const PATH_COLOR_VALUES: PathColorMode[] = [
   "solid", "speed", "heart_rate", "cadence", "altitude", "power", "temperature", "time",
 ];
-
-type BaseMapInfo = { label: string; tileUrl: string; attribution: string };
-
-const BASEMAPS: Record<"light" | "dark" | "openstreet" | "topo" | "satellite", BaseMapInfo> = {
-  light: {
-    label: "Light",
-    tileUrl: "https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-    attribution: "\u00a9 OpenStreetMap contributors \u00a9 CARTO"
-  },
-  openstreet: {
-    label: "OpenStreet",
-    tileUrl: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: "\u00a9 OpenStreetMap contributors"
-  },
-  topo: {
-    label: "Topo",
-    tileUrl: "https://a.tile.opentopomap.org/{z}/{x}/{y}.png",
-    attribution: "\u00a9 OpenStreetMap contributors, SRTM | OpenTopoMap"
-  },
-  satellite: {
-    label: "Satellite",
-    tileUrl: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    attribution: "Tiles \u00a9 Esri, Maxar, Earthstar Geographics"
-  },
-  dark: {
-    label: "Dark",
-    tileUrl: "https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-    attribution: "\u00a9 OpenStreetMap contributors \u00a9 CARTO"
-  }
-};
-
-function styleFromMap(ms: MapStyle, theme: "light" | "dark"): StyleSpecification {
-  const actualStyle = ms === "default" ? theme : ms;
-  const s = BASEMAPS[actualStyle as keyof typeof BASEMAPS];
-  return {
-    version: 8,
-    sources: { basemap: { type: "raster", tiles: [s.tileUrl], tileSize: 256, attribution: s.attribution } },
-    layers: [{ id: "basemap", type: "raster", source: "basemap" }]
-  };
-}
 
 /* ── Color scale ─────────────────────────────────────────────────── */
 

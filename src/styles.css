@@ -3263,3 +3263,10 @@ button:focus-visible {
   font-size: 0.84rem;
   margin: 0;
 }
+
+.hiking-tab .trip-map {
+  height: 380px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
