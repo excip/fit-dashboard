@@ -4,6 +4,7 @@ pub mod classify;
 pub mod cluster;
 pub mod aggregate;
 pub mod store;
+pub mod baseline;
 #[cfg(all(feature = "web", not(feature = "tauri-app")))]
 pub mod http;
 
