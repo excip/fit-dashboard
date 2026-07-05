@@ -12,6 +12,31 @@ pub struct Database {
 
 const WAL_LIMIT_BYTES: u64 = 25 * 1024 * 1024;
 
+pub struct UserNote {
+    pub subject_type: String,
+    pub subject_id: i64,
+    pub note: Option<String>,
+    pub rating: Option<i64>,
+}
+
+pub struct GeneratedNote {
+    pub subject_type: String,
+    pub subject_id: i64,
+    pub note: String,
+    pub fact_sheet_hash: String,
+    pub model: String,
+    pub generated_at: String,
+}
+
+pub struct NotesRun {
+    pub run_at: String,
+    pub ok: bool,
+    pub generated: i64,
+    pub skipped: i64,
+    pub deleted: i64,
+    pub message: Option<String>,
+}
+
 impl Database {
     pub fn new(path: &str) -> Result<Self> {
         tracing::info!(db_path = %path, "opening duckdb database");
@@ -154,6 +179,34 @@ impl Database {
             CREATE TABLE IF NOT EXISTS hiking_activity_names (
                 activity_id BIGINT PRIMARY KEY,
                 name VARCHAR NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS hiking_user_notes (
+                subject_type TEXT NOT NULL,
+                subject_id   BIGINT NOT NULL,
+                note         TEXT,
+                rating       TINYINT,
+                updated_at   TIMESTAMP NOT NULL,
+                PRIMARY KEY (subject_type, subject_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS hiking_generated_notes (
+                subject_type    TEXT NOT NULL,
+                subject_id      BIGINT NOT NULL,
+                note            TEXT NOT NULL,
+                fact_sheet_hash TEXT NOT NULL,
+                model           TEXT NOT NULL,
+                generated_at    TIMESTAMP NOT NULL,
+                PRIMARY KEY (subject_type, subject_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS hiking_notes_runs (
+                run_at    TIMESTAMP NOT NULL,
+                ok        BOOLEAN NOT NULL,
+                generated INTEGER NOT NULL,
+                skipped   INTEGER NOT NULL,
+                deleted   INTEGER NOT NULL,
+                message   TEXT
             );
 
             CREATE TABLE IF NOT EXISTS file_hash_blacklist (
@@ -671,6 +724,125 @@ mod tests {
         assert!(db.hiking_activity_names().unwrap().is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn hiking_notes_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("fitdash-notes-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Database::new(dir.join("t.duckdb").to_str().unwrap()).unwrap();
+
+        // User note: set, overwrite, clear.
+        db.set_hiking_user_note("trip", 100, Some("great hike"), Some(4)).unwrap();
+        let notes = db.hiking_user_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].subject_type, "trip");
+        assert_eq!(notes[0].subject_id, 100);
+        assert_eq!(notes[0].note.as_deref(), Some("great hike"));
+        assert_eq!(notes[0].rating, Some(4));
+
+        db.set_hiking_user_note("trip", 100, Some("epic hike"), Some(5)).unwrap();
+        let notes = db.hiking_user_notes().unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].note.as_deref(), Some("epic hike"));
+        assert_eq!(notes[0].rating, Some(5));
+
+        db.set_hiking_user_note("trip", 100, None, None).unwrap();
+        assert!(db.hiking_user_notes().unwrap().is_empty());
+
+        // Generated note: upsert twice, hash changes on second.
+        let n1 = GeneratedNote {
+            subject_type: "trip".into(),
+            subject_id: 100,
+            note: "narrative one".into(),
+            fact_sheet_hash: "hash_aaa".into(),
+            model: "qwen/qwen3-14b".into(),
+            generated_at: "2026-07-01 10:00:00".into(),
+        };
+        db.upsert_hiking_generated_note(&n1).unwrap();
+        let gen = db.hiking_generated_notes().unwrap();
+        assert_eq!(gen.len(), 1);
+        assert_eq!(gen[0].fact_sheet_hash, "hash_aaa");
+
+        let n2 = GeneratedNote {
+            subject_type: "trip".into(),
+            subject_id: 100,
+            note: "narrative two".into(),
+            fact_sheet_hash: "hash_bbb".into(),
+            model: "qwen/qwen3-14b".into(),
+            generated_at: "2026-07-02 10:00:00".into(),
+        };
+        db.upsert_hiking_generated_note(&n2).unwrap();
+        let gen = db.hiking_generated_notes().unwrap();
+        assert_eq!(gen.len(), 1);
+        assert_eq!(gen[0].note, "narrative two");
+        assert_eq!(gen[0].fact_sheet_hash, "hash_bbb");
+
+        // Add a second subject, then orphan-clean to keep only one.
+        let n3 = GeneratedNote {
+            subject_type: "activity".into(),
+            subject_id: 200,
+            note: "hike note".into(),
+            fact_sheet_hash: "hash_ccc".into(),
+            model: "qwen/qwen3-14b".into(),
+            generated_at: "2026-07-02 11:00:00".into(),
+        };
+        db.upsert_hiking_generated_note(&n3).unwrap();
+        assert_eq!(db.hiking_generated_notes().unwrap().len(), 2);
+
+        let removed = db
+            .delete_hiking_generated_notes_except(&[("trip".to_string(), 100)])
+            .unwrap();
+        assert_eq!(removed, 1);
+        let gen = db.hiking_generated_notes().unwrap();
+        assert_eq!(gen.len(), 1);
+        assert_eq!(gen[0].subject_type, "trip");
+        assert_eq!(gen[0].subject_id, 100);
+
+        // Runs come back newest-first.
+        db.record_hiking_notes_run(&NotesRun {
+            run_at: "2026-07-01 03:00:00".into(),
+            ok: true,
+            generated: 3,
+            skipped: 0,
+            deleted: 0,
+            message: None,
+        })
+        .unwrap();
+        db.record_hiking_notes_run(&NotesRun {
+            run_at: "2026-07-02 03:00:00".into(),
+            ok: false,
+            generated: 0,
+            skipped: 3,
+            deleted: 1,
+            message: Some("endpoint down".into()),
+        })
+        .unwrap();
+        db.record_hiking_notes_run(&NotesRun {
+            run_at: "2026-07-03 03:00:00".into(),
+            ok: true,
+            generated: 1,
+            skipped: 2,
+            deleted: 0,
+            message: None,
+        })
+        .unwrap();
+
+        let runs = db.last_hiking_notes_runs(5).unwrap();
+        assert_eq!(runs.len(), 3);
+        assert_eq!(runs[0].run_at, "2026-07-03 03:00:00");
+        assert!(runs[0].ok);
+        assert_eq!(runs[0].generated, 1);
+        assert_eq!(runs[1].run_at, "2026-07-02 03:00:00");
+        assert!(!runs[1].ok);
+        assert_eq!(runs[1].message.as_deref(), Some("endpoint down"));
+        assert_eq!(runs[2].run_at, "2026-07-01 03:00:00");
+
+        let limited = db.last_hiking_notes_runs(2).unwrap();
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].run_at, "2026-07-03 03:00:00");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 impl Database {
@@ -849,6 +1021,160 @@ impl Database {
         }
         self.checkpoint_if_wal_exceeds_limit()?;
         Ok(())
+    }
+
+    pub fn hiking_user_notes(&self) -> Result<Vec<UserNote>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT subject_type, subject_id, note, CAST(rating AS BIGINT) FROM hiking_user_notes",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(UserNote {
+                subject_type: r.get(0)?,
+                subject_id: r.get(1)?,
+                note: r.get(2)?,
+                rating: r.get(3)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn set_hiking_user_note(
+        &self,
+        subject_type: &str,
+        subject_id: i64,
+        note: Option<&str>,
+        rating: Option<i64>,
+    ) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            // DuckDB doesn't support INSERT OR REPLACE; delete then insert
+            conn.execute(
+                "DELETE FROM hiking_user_notes WHERE subject_type = ?1 AND subject_id = ?2",
+                params![subject_type, subject_id],
+            )?;
+            if note.is_some() || rating.is_some() {
+                conn.execute(
+                    "INSERT INTO hiking_user_notes (subject_type, subject_id, note, rating, updated_at)
+                     VALUES (?1, ?2, ?3, CAST(?4 AS TINYINT), now())",
+                    params![subject_type, subject_id, note, rating],
+                )?;
+            }
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn hiking_generated_notes(&self) -> Result<Vec<GeneratedNote>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT subject_type, subject_id, note, fact_sheet_hash, model, CAST(generated_at AS VARCHAR) FROM hiking_generated_notes",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(GeneratedNote {
+                subject_type: r.get(0)?,
+                subject_id: r.get(1)?,
+                note: r.get(2)?,
+                fact_sheet_hash: r.get(3)?,
+                model: r.get(4)?,
+                generated_at: r.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
+    pub fn upsert_hiking_generated_note(&self, n: &GeneratedNote) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            // DuckDB doesn't support INSERT OR REPLACE; delete then insert
+            conn.execute(
+                "DELETE FROM hiking_generated_notes WHERE subject_type = ?1 AND subject_id = ?2",
+                params![n.subject_type, n.subject_id],
+            )?;
+            conn.execute(
+                "INSERT INTO hiking_generated_notes (subject_type, subject_id, note, fact_sheet_hash, model, generated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, CAST(?6 AS TIMESTAMP))",
+                params![n.subject_type, n.subject_id, n.note, n.fact_sheet_hash, n.model, n.generated_at],
+            )?;
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn delete_hiking_generated_notes_except(&self, keep: &[(String, i64)]) -> Result<usize> {
+        let keep_set: std::collections::HashSet<(String, i64)> = keep.iter().cloned().collect();
+        let removed = {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            let existing: Vec<(String, i64)> = {
+                let mut stmt =
+                    conn.prepare("SELECT subject_type, subject_id FROM hiking_generated_notes")?;
+                let rows = stmt.query_map([], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+                })?;
+                let mut v = Vec::new();
+                for row in rows {
+                    v.push(row?);
+                }
+                v
+            };
+            let mut removed = 0usize;
+            for (st, id) in existing {
+                if !keep_set.contains(&(st.clone(), id)) {
+                    conn.execute(
+                        "DELETE FROM hiking_generated_notes WHERE subject_type = ?1 AND subject_id = ?2",
+                        params![st, id],
+                    )?;
+                    removed += 1;
+                }
+            }
+            removed
+        };
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(removed)
+    }
+
+    pub fn record_hiking_notes_run(&self, r: &NotesRun) -> Result<()> {
+        {
+            let conn = self.conn.lock().expect("db mutex poisoned");
+            conn.execute(
+                "INSERT INTO hiking_notes_runs (run_at, ok, generated, skipped, deleted, message)
+                 VALUES (CAST(?1 AS TIMESTAMP), ?2, ?3, ?4, ?5, ?6)",
+                params![r.run_at, r.ok, r.generated, r.skipped, r.deleted, r.message],
+            )?;
+        }
+        self.checkpoint_if_wal_exceeds_limit()?;
+        Ok(())
+    }
+
+    pub fn last_hiking_notes_runs(&self, limit: i64) -> Result<Vec<NotesRun>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let mut stmt = conn.prepare(
+            "SELECT CAST(run_at AS VARCHAR), ok, CAST(generated AS BIGINT), CAST(skipped AS BIGINT), CAST(deleted AS BIGINT), message
+             FROM hiking_notes_runs ORDER BY run_at DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit], |r| {
+            Ok(NotesRun {
+                run_at: r.get(0)?,
+                ok: r.get(1)?,
+                generated: r.get(2)?,
+                skipped: r.get(3)?,
+                deleted: r.get(4)?,
+                message: r.get(5)?,
+            })
+        })?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
     }
 
     pub fn activity_id_by_file_name(&self, file_name: &str) -> Result<Option<i64>> {
