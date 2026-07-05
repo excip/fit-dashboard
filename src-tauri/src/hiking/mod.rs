@@ -6,6 +6,7 @@ pub mod aggregate;
 pub mod store;
 pub mod baseline;
 pub mod episodes;
+pub mod factsheet;
 #[cfg(all(feature = "web", not(feature = "tauri-app")))]
 pub mod http;
 
