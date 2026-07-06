@@ -59,6 +59,23 @@ export type Trip = {
   user_rating: number | null;
 };
 
+export type NotesRun = {
+  run_at: string;
+  ok: boolean;
+  generated: number;
+  skipped: number;
+  deleted: number;
+  message: string | null;
+};
+
+export type NotesStatus = {
+  enabled: boolean;
+  model: string | null;
+  running: boolean;
+  last_runs: NotesRun[];
+  stale: number;
+};
+
 export type TripDay = {
   garmin_activity_id: number;
   dashboard_activity_id: number | null;

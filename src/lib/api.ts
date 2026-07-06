@@ -1,6 +1,6 @@
 import axios from "axios";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { Activity, HikingOverview, OverviewStats, RecordPoint, Trip, TripCategory, TripDetail } from "../types";
+import type { Activity, HikingOverview, NotesStatus, OverviewStats, RecordPoint, Trip, TripCategory, TripDetail } from "../types";
 
 type StorageInfo = {
   data_dir: string;
@@ -322,5 +322,15 @@ export const api = {
       note,
       rating,
     });
+  },
+
+  async hikingNotesStatus(): Promise<NotesStatus> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    return (await webClient.get("/hiking/notes/status")).data;
+  },
+
+  async hikingNotesRun(): Promise<void> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    await webClient.post("/hiking/notes/run");
   }
 };

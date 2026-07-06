@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { HikingOverview, Trip, TripCategory } from "../types";
+import type { HikingOverview, NotesStatus, Trip, TripCategory } from "../types";
 import { HikingTripDetail } from "./HikingTripDetail";
 
 const KM = (m: number) => (m / 1000).toFixed(0);
+
+const fmtRunDate = (iso: string | null | undefined): string => {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "never";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+};
+
+function ReadonlyStars({ rating }: { rating: number }) {
+  return (
+    <span className="hiking-stars readonly small" aria-label={`${rating} of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span key={n} className={n <= rating ? "on" : ""}>{n <= rating ? "★" : "☆"}</span>
+      ))}
+    </span>
+  );
+}
 
 type Props = { onOpenActivity?: (dashboardActivityId: number) => void };
 
@@ -16,6 +33,20 @@ export function HikingTab({ onOpenActivity }: Props) {
   const [editingTripId, setEditingTripId] = useState<number | null>(null);
   const [tripNameDraft, setTripNameDraft] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [notesStatus, setNotesStatus] = useState<NotesStatus | null>(null);
+  const [generating, setGenerating] = useState(false);
+
+  const running = (notesStatus?.running ?? false) || generating;
+
+  async function generateNotes() {
+    if (running) return;
+    setGenerating(true);
+    try {
+      await api.hikingNotesRun();
+    } catch {
+      setGenerating(false);
+    }
+  }
 
   async function saveTripName(tripId: number) {
     if (savingName) return;
@@ -46,6 +77,26 @@ export function HikingTab({ onOpenActivity }: Props) {
     };
   }, [year, refreshKey]);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.hikingNotesStatus().then((s) => { if (!cancelled) setNotesStatus(s); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => {
+      api.hikingNotesStatus().then((s) => {
+        setNotesStatus(s);
+        if (!s.running) {
+          setGenerating(false);
+          setRefreshKey((k) => k + 1);
+        }
+      }).catch(() => {});
+    }, 5000);
+    return () => clearInterval(id);
+  }, [running]);
+
   const years = Array.from({ length: 2026 - 2017 + 1 }, (_, i) => 2017 + i);
   const byCat = (c: TripCategory) => trips.filter((t) => t.category === c);
 
@@ -62,11 +113,30 @@ export function HikingTab({ onOpenActivity }: Props) {
 
   return (
     <div className="hiking-tab">
-      <div className="hiking-years">
-        <button className={year === null ? "active" : ""} aria-pressed={year === null} onClick={() => setYear(null)}>All</button>
-        {years.map((y) => (
-          <button key={y} className={year === y ? "active" : ""} aria-pressed={year === y} onClick={() => setYear(y)}>{y}</button>
-        ))}
+      <div className="hiking-header">
+        <div className="hiking-years">
+          <button className={year === null ? "active" : ""} aria-pressed={year === null} onClick={() => setYear(null)}>All</button>
+          {years.map((y) => (
+            <button key={y} className={year === y ? "active" : ""} aria-pressed={year === y} onClick={() => setYear(y)}>{y}</button>
+          ))}
+        </div>
+
+        {notesStatus && (
+          <div className="hiking-notes-control">
+            {notesStatus.enabled ? (
+              <>
+                <span className="hiking-notes-status">
+                  Notes: {notesStatus.stale} need update · last run {fmtRunDate(notesStatus.last_runs[0]?.run_at)}
+                </span>
+                <button className="hiking-notes-run" onClick={() => void generateNotes()} disabled={running}>
+                  {running ? "Generating…" : "Generate now"}
+                </button>
+              </>
+            ) : (
+              <span className="hiking-notes-status">Notes: disabled — set FIT_DASHBOARD_LLM_ENDPOINT</span>
+            )}
+          </div>
+        )}
       </div>
 
       {ov && (
@@ -148,6 +218,7 @@ export function HikingTab({ onOpenActivity }: Props) {
                 <span className="trip-nights">{t.nights > 0 ? `${t.nights}n` : "—"}</span>
                 <span className="trip-km">{KM(t.total_distance_m)} km</span>
                 <span className="trip-gain">▲{Math.round(t.total_gain)}</span>
+                {t.user_rating != null && <ReadonlyStars rating={t.user_rating} />}
               </div>
             );
           })}

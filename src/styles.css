@@ -3304,6 +3304,17 @@ button:focus-visible {
 .hiking-tab .trip-day:last-of-type { border-bottom: none; }
 .hiking-tab .trip-day .trip-row { border-bottom: none; }
 .hiking-tab .trip-day .hiking-journal.small { padding-bottom: 6px; }
+
+/* Read-only stars on trip rows (rating edited on detail page only) */
+.hiking-tab .hiking-stars.readonly span { color: var(--text-muted); font-size: 13px; line-height: 1; }
+.hiking-tab .hiking-stars.readonly span.on { color: var(--accent); }
+
+/* Header: year switcher + notes status/generate control */
+.hiking-tab .hiking-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hiking-tab .hiking-notes-control { display: flex; align-items: center; gap: 10px; }
+.hiking-tab .hiking-notes-status { font-size: 0.78rem; color: var(--text-muted); }
+.hiking-tab .hiking-notes-run { padding: 0.3rem 0.75rem; border-radius: 8px; font-size: 0.78rem; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); cursor: pointer; }
+.hiking-tab .hiking-notes-run:disabled { opacity: 0.6; cursor: default; }
 .hiking-tab .hiking-day-note { margin: 2px 0; }
 .hiking-tab .hiking-day-note-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.78rem; padding: 0; }
 .hiking-tab .hiking-day-note p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.45; color: var(--text-secondary); }
