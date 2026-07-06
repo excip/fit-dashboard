@@ -85,11 +85,19 @@ pub struct CategoryQuery {
     pub year: Option<i32>,
 }
 
+/// A trip row plus its manual rating (additive over the flattened `Trip` fields).
+#[derive(serde::Serialize)]
+pub struct TripRow {
+    #[serde(flatten)]
+    pub trip: cluster::Trip,
+    pub user_rating: Option<i64>,
+}
+
 pub async fn hiking_trips(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Query(q): Query<CategoryQuery>,
-) -> Result<Json<Vec<cluster::Trip>>, StatusCode> {
+) -> Result<Json<Vec<TripRow>>, StatusCode> {
     use chrono::Datelike;
     ensure_session(&state, &headers)?;
     let mut trips = load_trips(&state)?;
@@ -106,7 +114,19 @@ pub async fn hiking_trips(
         trips.retain(|t| t.category == want);
     }
     trips.sort_by(|a, b| b.start_date.cmp(&a.start_date));
-    Ok(Json(trips))
+
+    let ratings: HashMap<i64, i64> = state.db.hiking_user_notes().map_err(|e| {
+        tracing::error!(error = %e, "failed to load hiking user notes");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?.into_iter()
+        .filter(|n| n.subject_type == "trip")
+        .filter_map(|n| n.rating.map(|r| (n.subject_id, r)))
+        .collect();
+
+    let rows: Vec<TripRow> = trips.into_iter()
+        .map(|t| TripRow { user_rating: ratings.get(&t.id).copied(), trip: t })
+        .collect();
+    Ok(Json(rows))
 }
 
 #[derive(serde::Serialize)]
@@ -121,6 +141,9 @@ pub struct TripDay {
     pub duration_s: f64,
     pub location_name: Option<String>,
     pub custom_name: Option<String>,
+    pub generated_note: Option<String>,
+    pub user_note: Option<String>,
+    pub user_rating: Option<i64>,
 }
 
 #[derive(serde::Serialize)]
@@ -133,6 +156,9 @@ pub struct TripDetail {
     pub recovery: Vec<store::RecoveryDay>,
     pub baselines: baseline::Baselines,
     pub recovery_summary: baseline::RecoverySummary,
+    pub generated_note: Option<String>,
+    pub user_note: Option<String>,
+    pub user_rating: Option<i64>,
 }
 
 pub async fn hiking_trip_detail(
@@ -155,6 +181,23 @@ pub async fn hiking_trip_detail(
         StatusCode::INTERNAL_SERVER_ERROR
     })?.into_iter().collect();
 
+    // (subject_type, subject_id) -> (note, rating) and -> generated note text,
+    // fetched once and shared by the trip and each per-day lookup.
+    let user_notes: HashMap<(String, i64), (Option<String>, Option<i64>)> =
+        state.db.hiking_user_notes().map_err(|e| {
+            tracing::error!(error = %e, "failed to load hiking user notes");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?.into_iter()
+        .map(|n| ((n.subject_type, n.subject_id), (n.note, n.rating)))
+        .collect();
+    let generated_notes: HashMap<(String, i64), String> =
+        state.db.hiking_generated_notes().map_err(|e| {
+            tracing::error!(error = %e, "failed to load hiking generated notes");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?.into_iter()
+        .map(|g| ((g.subject_type, g.subject_id), g.note))
+        .collect();
+
     let days: Vec<TripDay> = trip.activity_ids.iter().filter_map(|id| {
         acts.iter().find(|a| a.activity_id == *id).map(|a| TripDay {
             garmin_activity_id: a.activity_id,
@@ -169,6 +212,15 @@ pub async fn hiking_trip_detail(
             duration_s: a.duration_s,
             location_name: a.location_name.clone(),
             custom_name: activity_names.get(&a.activity_id).cloned(),
+            generated_note: generated_notes
+                .get(&("activity".to_string(), a.activity_id))
+                .cloned(),
+            user_note: user_notes
+                .get(&("activity".to_string(), a.activity_id))
+                .and_then(|(n, _)| n.clone()),
+            user_rating: user_notes
+                .get(&("activity".to_string(), a.activity_id))
+                .and_then(|(_, r)| *r),
         })
     }).collect();
 
@@ -192,6 +244,13 @@ pub async fn hiking_trip_detail(
         .filter(|d| d.date.as_str() >= win_start.as_str() && d.date.as_str() <= win_end.as_str())
         .collect();
 
+    let trip_key = ("trip".to_string(), trip.id);
+    let generated_note = generated_notes.get(&trip_key).cloned();
+    let (user_note, user_rating) = user_notes
+        .get(&trip_key)
+        .map(|(n, r)| (n.clone(), *r))
+        .unwrap_or((None, None));
+
     Ok(Json(TripDetail {
         merged,
         has_previous: idx > 0,
@@ -200,6 +259,9 @@ pub async fn hiking_trip_detail(
         recovery,
         baselines,
         recovery_summary,
+        generated_note,
+        user_note,
+        user_rating,
         trip,
     }))
 }
@@ -277,4 +339,78 @@ pub async fn hiking_set_activity_name(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(serde::Deserialize)]
+pub struct UserNoteBody {
+    pub subject_type: String,
+    pub subject_id: i64,
+    pub note: Option<String>,
+    pub rating: Option<i64>,
+}
+
+pub async fn hiking_set_user_note(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<UserNoteBody>,
+) -> Result<StatusCode, StatusCode> {
+    ensure_session(&state, &headers)?;
+    if body.subject_type != "trip" && body.subject_type != "activity" {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    if let Some(r) = body.rating {
+        if !(1..=5).contains(&r) {
+            return Err(StatusCode::UNPROCESSABLE_ENTITY);
+        }
+    }
+    let note = body.note.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    state.db.set_hiking_user_note(&body.subject_type, body.subject_id, note, body.rating)
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to store user note");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn hiking_notes_run(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<(StatusCode, Json<serde_json::Value>), StatusCode> {
+    ensure_session(&state, &headers)?;
+    if crate::hiking::notes_pipeline::llm_config().is_none() {
+        return Err(StatusCode::CONFLICT);
+    }
+    let owned = (*state).clone();
+    tokio::spawn(async move {
+        crate::hiking::notes_pipeline::run_notes(&owned).await;
+    });
+    Ok((StatusCode::ACCEPTED, Json(serde_json::json!({ "started": true }))))
+}
+
+pub async fn hiking_notes_status(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    ensure_session(&state, &headers)?;
+    let cfg = crate::hiking::notes_pipeline::llm_config();
+    let last_runs = state.db.last_hiking_notes_runs(5).map_err(|e| {
+        tracing::error!(error = %e, "failed to load hiking notes runs");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+    let last_runs: Vec<serde_json::Value> = last_runs.into_iter().map(|r| serde_json::json!({
+        "run_at": r.run_at,
+        "ok": r.ok,
+        "generated": r.generated,
+        "skipped": r.skipped,
+        "deleted": r.deleted,
+        "message": r.message,
+    })).collect();
+    let stale = crate::hiking::notes_pipeline::stale_count(&state).unwrap_or(0);
+    Ok(Json(serde_json::json!({
+        "enabled": cfg.is_some(),
+        "model": cfg.map(|c| c.model),
+        "running": crate::hiking::notes_pipeline::is_running(),
+        "last_runs": last_runs,
+        "stale": stale,
+    })))
 }

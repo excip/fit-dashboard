@@ -419,11 +419,43 @@ fn build_subjects(state: &AppState) -> Result<Vec<Subject>, String> {
 // Public entry points
 // ---------------------------------------------------------------------------
 
+/// Process-wide guard so concurrent pipeline runs are refused.
+fn running_lock() -> &'static tokio::sync::Mutex<()> {
+    static RUNNING: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    RUNNING.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+/// True while a run holds the process-wide lock (probe via `try_lock`).
+pub fn is_running() -> bool {
+    running_lock().try_lock().is_err()
+}
+
+/// Count subjects whose current fact-sheet hash differs from the stored generated
+/// note (or that have no stored note yet). Rebuilds fact sheets, so it needs the
+/// garmin db; sub-second on real data.
+pub fn stale_count(state: &AppState) -> Result<usize, String> {
+    let subjects = build_subjects(state)?;
+    let stored: HashMap<(String, i64), String> = state
+        .db
+        .hiking_generated_notes()
+        .map_err(|e| format!("failed to load generated notes: {e}"))?
+        .into_iter()
+        .map(|g| ((g.subject_type, g.subject_id), g.fact_sheet_hash))
+        .collect();
+    Ok(subjects
+        .iter()
+        .filter(|s| {
+            stored
+                .get(&(s.subject_type.clone(), s.subject_id))
+                .map_or(true, |h| *h != s.fact_hash)
+        })
+        .count())
+}
+
 /// Run the pipeline once. Concurrent runs are refused via a process-wide mutex
 /// (`try_lock` fail ⇒ "already running", no run recorded).
 pub async fn run_notes(state: &AppState) -> RunSummary {
-    static RUNNING: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    let lock = RUNNING.get_or_init(|| tokio::sync::Mutex::new(()));
+    let lock = running_lock();
     let _guard = match lock.try_lock() {
         Ok(g) => g,
         Err(_) => {
