@@ -380,6 +380,7 @@ You write a short, factual narrative about the reader's own {subject}, in flowin
 \n\
 Rules:\n\
 - Use ONLY the facts in the JSON fact sheet. Never invent numbers, places, names, weather, or events that are not in the data.\n\
+- The \"superlatives\" are records WITHIN this {subject} only. A day's all-time standing across your history is given solely by the \"history\" ranks; never call something a lifetime best or \"your biggest ever\" unless a rank of 1 says so.\n\
 - Address the reader as \"you\".\n\
 - Write {min}\u{2013}{max} words. This word count is a HARD limit.\n\
 - Flowing prose only: two or three short paragraphs. No bullet points, no headers, no lists.\n\
