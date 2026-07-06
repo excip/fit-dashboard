@@ -9,6 +9,8 @@ pub mod episodes;
 pub mod factsheet;
 #[cfg(all(feature = "web", not(feature = "tauri-app")))]
 pub mod http;
+#[cfg(all(feature = "web", not(feature = "tauri-app")))]
+pub mod notes_pipeline;
 
 /// One candidate activity pulled from garmin.db.
 #[derive(Debug, Clone)]

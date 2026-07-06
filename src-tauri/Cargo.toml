@@ -13,6 +13,7 @@ dirs = "5"
 fitparser = "0.8"
 hex = "0.4"
 rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 rusqlite = { version = "0.31", features = ["bundled"] }
 reverse_geocoder = "4.1.1"
 roxmltree = "0.20"
@@ -37,5 +38,5 @@ static_vcruntime = "2"
 
 [features]
 default = ["web"]
-web = []
+web = ["dep:reqwest"]
 tauri-app = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-plugin-shell"]

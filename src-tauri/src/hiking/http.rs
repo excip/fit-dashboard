@@ -34,14 +34,14 @@ fn load_overrides(state: &AppState) -> Result<HashMap<i64, Override>, StatusCode
     })
 }
 
-struct HikingData {
-    acts: Vec<crate::hiking::HikeActivity>,
-    trips: Vec<cluster::Trip>,
-    overrides: HashMap<i64, Override>,
-    garmin_db_path: std::sync::Arc<std::path::PathBuf>,
+pub(crate) struct HikingData {
+    pub(crate) acts: Vec<crate::hiking::HikeActivity>,
+    pub(crate) trips: Vec<cluster::Trip>,
+    pub(crate) overrides: HashMap<i64, Override>,
+    pub(crate) garmin_db_path: std::sync::Arc<std::path::PathBuf>,
 }
 
-fn load_acts_and_trips(state: &AppState) -> Result<HikingData, StatusCode> {
+pub(crate) fn load_acts_and_trips(state: &AppState) -> Result<HikingData, StatusCode> {
     let path = state.garmin_db_path.as_ref().ok_or_else(|| {
         tracing::warn!("hiking endpoint unavailable: garmin db not configured");
         StatusCode::SERVICE_UNAVAILABLE
