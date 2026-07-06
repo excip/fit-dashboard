@@ -131,7 +131,9 @@ async fn main() -> Result<()> {
 
     #[cfg(all(feature = "web", not(feature = "tauri-app")))]
     {
-        tokio::spawn(hiking::notes_pipeline::scheduler(state.clone()));
+        if hiking::notes_pipeline::schedule_enabled() {
+            tokio::spawn(hiking::notes_pipeline::scheduler(state.clone()));
+        }
         let app = server::app(state);
         let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
         tracing::info!("Server listening on http://0.0.0.0:8080");

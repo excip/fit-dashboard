@@ -5,6 +5,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
+use crate::database::GeneratedNote;
 use crate::state::AppState;
 use crate::hiking::{HikingSettings, Override, store, cluster, aggregate, baseline};
 use crate::server::ensure_session;
@@ -157,6 +158,8 @@ pub struct TripDetail {
     pub baselines: baseline::Baselines,
     pub recovery_summary: baseline::RecoverySummary,
     pub generated_note: Option<String>,
+    pub generated_note_model: Option<String>,
+    pub generated_note_date: Option<String>,
     pub user_note: Option<String>,
     pub user_rating: Option<i64>,
 }
@@ -190,12 +193,12 @@ pub async fn hiking_trip_detail(
         })?.into_iter()
         .map(|n| ((n.subject_type, n.subject_id), (n.note, n.rating)))
         .collect();
-    let generated_notes: HashMap<(String, i64), String> =
+    let generated_notes: HashMap<(String, i64), GeneratedNote> =
         state.db.hiking_generated_notes().map_err(|e| {
             tracing::error!(error = %e, "failed to load hiking generated notes");
             StatusCode::INTERNAL_SERVER_ERROR
         })?.into_iter()
-        .map(|g| ((g.subject_type, g.subject_id), g.note))
+        .map(|g| ((g.subject_type.clone(), g.subject_id), g))
         .collect();
 
     let days: Vec<TripDay> = trip.activity_ids.iter().filter_map(|id| {
@@ -214,7 +217,7 @@ pub async fn hiking_trip_detail(
             custom_name: activity_names.get(&a.activity_id).cloned(),
             generated_note: generated_notes
                 .get(&("activity".to_string(), a.activity_id))
-                .cloned(),
+                .map(|g| g.note.clone()),
             user_note: user_notes
                 .get(&("activity".to_string(), a.activity_id))
                 .and_then(|(n, _)| n.clone()),
@@ -245,7 +248,17 @@ pub async fn hiking_trip_detail(
         .collect();
 
     let trip_key = ("trip".to_string(), trip.id);
-    let generated_note = generated_notes.get(&trip_key).cloned();
+    let trip_generated_note = generated_notes.get(&trip_key);
+    let generated_note = trip_generated_note.map(|g| g.note.clone());
+    let generated_note_model = trip_generated_note.map(|g| g.model.clone());
+    let generated_note_date = trip_generated_note.and_then(|g| {
+        chrono::NaiveDateTime::parse_from_str(&g.generated_at, "%Y-%m-%d %H:%M:%S%.f")
+            .or_else(|_| {
+                chrono::NaiveDateTime::parse_from_str(&g.generated_at, "%Y-%m-%d %H:%M:%S")
+            })
+            .ok()
+            .map(|dt| dt.format("%b %-d").to_string())
+    });
     let (user_note, user_rating) = user_notes
         .get(&trip_key)
         .map(|(n, r)| (n.clone(), *r))
@@ -260,6 +273,8 @@ pub async fn hiking_trip_detail(
         baselines,
         recovery_summary,
         generated_note,
+        generated_note_model,
+        generated_note_date,
         user_note,
         user_rating,
         trip,

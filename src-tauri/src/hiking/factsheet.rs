@@ -355,10 +355,26 @@ pub fn hike_fact_sheet(
     }
 }
 
-/// Hex-encoded SHA-256 of the canonical JSON serialization.
+/// Hex-encoded SHA-256 of the canonical JSON serialization. Test-only: the pipeline
+/// keys on `subject_hash` (which also mixes in `PROMPT_VERSION`); this bare form is
+/// kept for the hash-stability unit tests.
+#[cfg(test)]
 pub fn fact_hash<T: Serialize>(fs: &T) -> String {
     let json = serde_json::to_string(fs).expect("fact sheet serializes");
     let mut h = Sha256::new();
+    h.update(json.as_bytes());
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Bump when the prompt or model changes so all cached notes become stale.
+pub const PROMPT_VERSION: u32 = 1;
+
+/// Staleness key: SHA-256 of the fact sheet JSON prefixed with the prompt version,
+/// so a PROMPT_VERSION bump invalidates every cached note.
+pub fn subject_hash<T: Serialize>(fs: &T) -> String {
+    let json = serde_json::to_string(fs).expect("fact sheet serializes");
+    let mut h = Sha256::new();
+    h.update(format!("v{PROMPT_VERSION}\n").as_bytes());
     h.update(json.as_bytes());
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -491,6 +507,15 @@ mod tests {
 
         let fs3 = trip_fact_sheet(&t, &acts, &all, &[], &b, &rs, &[], Some(5), None);
         assert_ne!(fact_hash(&fs1), fact_hash(&fs3), "flipping the rating must change the hash");
+    }
+
+    #[test]
+    fn subject_hash_mixes_in_prompt_version() {
+        let acts = vec![act(1, nd(2024, 6, 1), 20_000.0, 800.0, 800.0, 25_000, 14_400.0, Some(2100.0))];
+        let t = mk_trip(1, TripCategory::Weekend, nd(2024, 6, 1), nd(2024, 6, 2), 1, vec![1], 20_000.0, 800.0, 800.0, 25_000);
+        let all = vec![t.clone()];
+        let fs = trip_fact_sheet(&t, &acts, &all, &[], &Baselines::default(), &rs_none(), &[], None, None);
+        assert_ne!(subject_hash(&fs), fact_hash(&fs), "prompt version must be mixed into the staleness key");
     }
 
     #[test]

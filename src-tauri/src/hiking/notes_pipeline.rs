@@ -13,7 +13,7 @@ use crate::database::{Database, GeneratedNote, NotesRun};
 use crate::hiking::baseline;
 use crate::hiking::cluster::TripCategory;
 use crate::hiking::episodes::{detect_episodes, DayRow, EpisodeConfig};
-use crate::hiking::factsheet::{build_prompt, fact_hash, hike_fact_sheet, trip_fact_sheet};
+use crate::hiking::factsheet::{build_prompt, hike_fact_sheet, subject_hash, trip_fact_sheet};
 use crate::hiking::store;
 use crate::hiking::HikeActivity;
 use crate::state::AppState;
@@ -39,6 +39,14 @@ pub fn llm_config() -> Option<LlmConfig> {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| DEFAULT_MODEL.to_string());
     Some(LlmConfig { endpoint, model })
+}
+
+/// True if `FIT_DASHBOARD_LLM_SCHEDULE` is set to a truthy value ("1"/"true", case-insensitive).
+pub fn schedule_enabled() -> bool {
+    std::env::var("FIT_DASHBOARD_LLM_SCHEDULE")
+        .ok()
+        .map(|s| s.trim().to_ascii_lowercase())
+        .is_some_and(|s| s == "1" || s == "true")
 }
 
 /// Outcome of a pipeline run.
@@ -88,6 +96,7 @@ impl HttpChatClient {
     fn new(cfg: &LlmConfig) -> Result<Self, String> {
         let client = reqwest::Client::builder()
             .timeout(StdDuration::from_secs(300)) // first call bears the cold model load
+            .connect_timeout(StdDuration::from_secs(10))
             .build()
             .map_err(|e| format!("failed to build HTTP client: {e}"))?;
         Ok(Self {
@@ -107,7 +116,7 @@ impl ChatClient for HttpChatClient {
                 { "role": "system", "content": system },
                 { "role": "user", "content": user },
             ],
-            "temperature": 0.7,
+            "temperature": 0.2,
             "max_tokens": 600,
         });
         let resp = self
@@ -372,7 +381,7 @@ fn build_subjects(state: &AppState) -> Result<Vec<Subject>, String> {
         subjects.push(Subject {
             subject_type: "trip".to_string(),
             subject_id: trip.id,
-            fact_hash: fact_hash(&fs),
+            fact_hash: subject_hash(&fs),
             system,
             user,
         });
@@ -404,7 +413,7 @@ fn build_subjects(state: &AppState) -> Result<Vec<Subject>, String> {
                 subjects.push(Subject {
                     subject_type: "activity".to_string(),
                     subject_id: a.activity_id,
-                    fact_hash: fact_hash(&fs),
+                    fact_hash: subject_hash(&fs),
                     system,
                     user,
                 });
@@ -550,6 +559,9 @@ fn run_older_than_days(run_at: &str, days: i64) -> bool {
 /// newest successful run is > 6 days old (or none exists), run the pipeline. The
 /// spawn is wired from `main.rs` in Task 5.
 pub async fn scheduler(state: AppState) {
+    if !schedule_enabled() {
+        return;
+    }
     loop {
         tokio::time::sleep(until_next_0300()).await;
 
@@ -581,6 +593,129 @@ pub async fn scheduler(state: AppState) {
             "hiking notes scheduled run finished"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Offline numeric-hallucination audit of already-generated notes. Reached only
+// via the `#[ignore]` report test, so the whole section is test-gated; un-gate if
+// it ever gets a CLI/endpoint entry point.
+// ---------------------------------------------------------------------------
+
+/// A stored note that mentions one or more numbers not backed by its fact sheet.
+#[cfg(test)]
+pub struct AuditFinding {
+    pub subject_type: String,
+    pub subject_id: i64,
+    pub unsupported: Vec<f64>,
+}
+
+/// Scan `s` for decimal-number runs (optional leading '-', digits, optional
+/// single '.' + digits), dropping ',' thousands separators, and parse to f64.
+/// Dependency-free char scan; handles "12.5", "1,234", "48", "-6".
+#[cfg(test)]
+fn extract_numbers(s: &str) -> Vec<f64> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        let is_digit = c.is_ascii_digit();
+        let is_neg = c == b'-' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit();
+        if !is_digit && !is_neg {
+            i += 1;
+            continue;
+        }
+        let mut buf = String::new();
+        if is_neg {
+            buf.push('-');
+            i += 1;
+        }
+        let mut seen_dot = false;
+        while i < bytes.len() {
+            let ch = bytes[i];
+            if ch.is_ascii_digit() {
+                buf.push(ch as char);
+                i += 1;
+            } else if ch == b',' && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit() {
+                i += 1; // thousands separator: drop it
+            } else if ch == b'.' && !seen_dot && i + 1 < bytes.len() && bytes[i + 1].is_ascii_digit()
+            {
+                seen_dot = true;
+                buf.push('.');
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        if let Ok(v) = buf.parse::<f64>() {
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// True if a note's `mentioned` number is backed by the fact sheet. Whole small
+/// integers 0..=31 (dates/day-counts/ranks) and 4-digit years 1900..=2100 are
+/// always treated as supported (noise). Otherwise `mentioned` must be within an
+/// absolute 0.5 (1-decimal rounding / int vs formatted display) or a 1% relative
+/// tolerance (e.g. 2100 vs 2099.6) of some fact-sheet number.
+#[cfg(test)]
+fn is_supported(mentioned: f64, supported: &[f64]) -> bool {
+    if mentioned.fract() == 0.0 && (0.0..=31.0).contains(&mentioned) {
+        return true;
+    }
+    if mentioned.fract() == 0.0 && (1900.0..=2100.0).contains(&mentioned) {
+        return true;
+    }
+    supported.iter().any(|&s| {
+        let abs = (mentioned - s).abs();
+        abs <= 0.5 || abs <= s.abs() * 0.01
+    })
+}
+
+/// Audit already-generated notes for invented numbers. Rebuilds every subject's
+/// fact sheet (so it needs the garmin db), matches each stored note to its subject
+/// by `(subject_type, subject_id)`, and flags any number in the note text that no
+/// number in the fact-sheet JSON supports. Returns only notes with a finding.
+#[cfg(test)]
+pub fn audit_notes(state: &AppState) -> Result<Vec<AuditFinding>, String> {
+    let subjects = build_subjects(state)?;
+    let by_subject: HashMap<(String, i64), &Subject> = subjects
+        .iter()
+        .map(|s| ((s.subject_type.clone(), s.subject_id), s))
+        .collect();
+
+    let notes = state
+        .db
+        .hiking_generated_notes()
+        .map_err(|e| format!("failed to load generated notes: {e}"))?;
+
+    let mut findings = Vec::new();
+    for note in &notes {
+        let subject = match by_subject.get(&(note.subject_type.clone(), note.subject_id)) {
+            Some(s) => *s,
+            None => continue,
+        };
+        // The fact-sheet JSON is everything after the leading "Fact sheet:\n".
+        let fact_json = subject
+            .user
+            .split_once('\n')
+            .map(|(_, rest)| rest)
+            .unwrap_or(&subject.user);
+        let supported = extract_numbers(fact_json);
+        let unsupported: Vec<f64> = extract_numbers(&note.note)
+            .into_iter()
+            .filter(|&n| !is_supported(n, &supported))
+            .collect();
+        if !unsupported.is_empty() {
+            findings.push(AuditFinding {
+                subject_type: note.subject_type.clone(),
+                subject_id: note.subject_id,
+                unsupported,
+            });
+        }
+    }
+    Ok(findings)
 }
 
 // ---------------------------------------------------------------------------
@@ -709,5 +844,69 @@ mod tests {
     fn strip_think_removes_block_and_trims() {
         assert_eq!(strip_think("<think>reasoning</think>  Hello."), "Hello.");
         assert_eq!(strip_think("  plain  "), "plain");
+    }
+
+    #[test]
+    fn extract_numbers_handles_common_forms() {
+        assert_eq!(extract_numbers("12.5"), vec![12.5]);
+        assert_eq!(extract_numbers("1,234"), vec![1234.0]);
+        assert_eq!(extract_numbers("48"), vec![48.0]);
+        assert_eq!(extract_numbers("-6"), vec![-6.0]);
+        assert_eq!(
+            extract_numbers("Climbed 1,234 m over 12.5 km at -6 C, 48 total."),
+            vec![1234.0, 12.5, -6.0, 48.0]
+        );
+        // A trailing period is a sentence end, not a decimal point.
+        assert_eq!(extract_numbers("ended at 48."), vec![48.0]);
+        assert_eq!(extract_numbers("no numbers here"), Vec::<f64>::new());
+    }
+
+    #[test]
+    fn is_supported_rules() {
+        // Hundreds-display rounding: 2100 backed by 2099.6.
+        assert!(is_supported(2100.0, &[2099.6]));
+        // Relative (1%) tolerance beyond the absolute 0.5, non-year value.
+        assert!(is_supported(2200.0, &[2180.0]));
+        // Integer note number vs 1-decimal fact.
+        assert!(is_supported(15.0, &[15.0]));
+        // Clearly invented number.
+        assert!(!is_supported(999.0, &[12.5, 48.0]));
+        // Small integers (dates/day-counts/ranks) are always supported.
+        assert!(is_supported(6.0, &[]));
+        // 4-digit years are always supported.
+        assert!(is_supported(2024.0, &[]));
+    }
+
+    #[test]
+    #[ignore] // report-only; needs FIT_DASHBOARD_DB (DuckDB with notes) + GARMIN_DB_TEST (garmin.db)
+    fn audit_generated_notes_report() {
+        use crate::state::StorageInfo;
+        let db_path = std::env::var("FIT_DASHBOARD_DB").expect("set FIT_DASHBOARD_DB");
+        let garmin = std::env::var("GARMIN_DB_TEST").expect("set GARMIN_DB_TEST");
+        let db = Database::new(&db_path).unwrap();
+        let storage = StorageInfo {
+            data_dir: String::new(),
+            db_path: db_path.clone(),
+            fit_files_dir: String::new(),
+        };
+        let state = AppState::new(db, storage, Some(std::path::PathBuf::from(garmin)));
+
+        let findings = audit_notes(&state).expect("audit_notes failed");
+        let mut total = 0usize;
+        for f in &findings {
+            total += f.unsupported.len();
+            println!(
+                "{} {}: {} unsupported number(s): {:?}",
+                f.subject_type,
+                f.subject_id,
+                f.unsupported.len(),
+                f.unsupported
+            );
+        }
+        println!(
+            "audit summary: {} note(s) with unsupported numbers, {} unsupported number(s) total",
+            findings.len(),
+            total
+        );
     }
 }

@@ -142,6 +142,8 @@ export type TripDetail = {
   baselines: Baselines;
   recovery_summary: RecoverySummary;
   generated_note: string | null;
+  generated_note_model: string | null;
+  generated_note_date: string | null;
   user_note: string | null;
   user_rating: number | null;
 };
