@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ReactECharts from "echarts-for-react";
 import { api } from "../lib/api";
 import type { Baselines, MetricSummary, RecordPoint, RecoveryDay, TripDetail } from "../types";
@@ -93,6 +93,129 @@ function metricVerdict(label: string, m: MetricSummary, unit: string): string {
       ? `back to baseline ${m.days_to_recover} day${m.days_to_recover === 1 ? "" : "s"} after the trip`
       : "not back to baseline within 21 days";
   return `${label} peaked ${sign}${m.peak_deviation.toFixed(0)} ${unit} vs baseline (day ${m.peak_trip_day}) · ${recov}`;
+}
+
+// Split a generated note into paragraphs on blank lines or newlines.
+function paragraphs(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
+function StarRating({
+  value,
+  onChange,
+  small,
+}: {
+  value: number | null;
+  onChange: (v: number | null) => void;
+  small?: boolean;
+}) {
+  return (
+    <span className={`hiking-stars${small ? " small" : ""}`}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          className={value != null && n <= value ? "on" : ""}
+          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(value === n ? null : n);
+          }}
+        >
+          {value != null && n <= value ? "★" : "☆"}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+// Star + auto-growing note textarea for one subject. Optimistic local state,
+// saved on blur / star click, reverts on error. Does not trigger a re-fetch.
+function NoteJournal({
+  subjectType,
+  subjectId,
+  note,
+  rating,
+  small,
+  onError,
+}: {
+  subjectType: "trip" | "activity";
+  subjectId: number;
+  note: string | null;
+  rating: number | null;
+  small?: boolean;
+  onError: (msg: string) => void;
+}) {
+  const [ratingState, setRatingState] = useState<number | null>(rating);
+  const [noteState, setNoteState] = useState(note ?? "");
+  const savedRating = useRef<number | null>(rating);
+  const savedNote = useRef(note ?? "");
+  const textRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [noteState]);
+
+  async function save(nextRating: number | null, nextNoteRaw: string) {
+    const trimmed = nextNoteRaw.trim();
+    const noteToSave = trimmed.length > 0 ? trimmed : null;
+    if (nextRating === savedRating.current && (noteToSave ?? "") === savedNote.current) return;
+    const prevRating = ratingState;
+    setRatingState(nextRating);
+    try {
+      await api.hikingSetUserNote(subjectType, subjectId, noteToSave, nextRating);
+      savedRating.current = nextRating;
+      savedNote.current = noteToSave ?? "";
+    } catch {
+      setRatingState(prevRating);
+      onError("Failed to save note.");
+    }
+  }
+
+  return (
+    <div className={`hiking-journal${small ? " small" : ""}`} onClick={(e) => e.stopPropagation()}>
+      <StarRating value={ratingState} small={small} onChange={(v) => void save(v, noteState)} />
+      <textarea
+        ref={textRef}
+        className={`hiking-note-input${small ? " small" : ""}`}
+        value={noteState}
+        rows={1}
+        placeholder="Add a note…"
+        onChange={(e) => setNoteState(e.target.value)}
+        onBlur={() => void save(ratingState, noteState)}
+      />
+    </div>
+  );
+}
+
+// Collapsible per-day generated narrative.
+function DayGeneratedNote({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="hiking-day-note">
+      <button
+        type="button"
+        className="hiking-day-note-toggle"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((o) => !o);
+        }}
+      >
+        {open ? "▾" : "▸"} Summary
+      </button>
+      {open &&
+        paragraphs(text).map((p, i) => (
+          <p key={i}>{p}</p>
+        ))}
+    </div>
+  );
 }
 
 export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity }: Props) {
@@ -336,8 +459,8 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
           const editing = editingDayId === d.garmin_activity_id;
           const displayName = d.custom_name ?? d.location_name ?? "";
           return (
+            <div key={d.garmin_activity_id} className="trip-day">
             <div
-              key={d.garmin_activity_id}
               className={`trip-row${!editing && d.dashboard_activity_id != null ? " clickable" : ""}`}
               onClick={() => {
                 if (!editing && d.dashboard_activity_id != null) onOpenActivity?.(d.dashboard_activity_id);
@@ -379,6 +502,16 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
               <span className="trip-km">{(d.distance_m / 1000).toFixed(1)} km</span>
               <span className="trip-gain">▲{Math.round(d.elevation_gain)}</span>
             </div>
+            {d.generated_note && <DayGeneratedNote text={d.generated_note} />}
+            <NoteJournal
+              subjectType="activity"
+              subjectId={d.garmin_activity_id}
+              note={d.user_note}
+              rating={d.user_rating}
+              small
+              onError={setError}
+            />
+            </div>
           );
         })}
       </section>
@@ -394,6 +527,25 @@ export function HikingTripDetail({ tripId, onBack, onTripChanged, onOpenActivity
           )}
         </div>
       )}
+
+      {detail.generated_note && (
+        <section className="hiking-note-generated panel">
+          {paragraphs(detail.generated_note).map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+          <div className="hiking-note-caption">Generated summary</div>
+        </section>
+      )}
+
+      <div className="hiking-journal-block">
+        <NoteJournal
+          subjectType="trip"
+          subjectId={t.id}
+          note={detail.user_note}
+          rating={detail.user_rating}
+          onError={setError}
+        />
+      </div>
 
       <div className="hiking-recovery">
         <div className="panel">

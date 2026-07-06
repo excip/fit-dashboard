@@ -56,6 +56,7 @@ export type Trip = {
   total_gain: number;
   total_loss: number;
   total_steps: number;
+  user_rating: number | null;
 };
 
 export type TripDay = {
@@ -69,6 +70,9 @@ export type TripDay = {
   duration_s: number;
   location_name: string | null;
   custom_name: string | null;
+  generated_note: string | null;
+  user_note: string | null;
+  user_rating: number | null;
 };
 
 export type RecoveryDay = {
@@ -120,4 +124,7 @@ export type TripDetail = {
   recovery: RecoveryDay[];
   baselines: Baselines;
   recovery_summary: RecoverySummary;
+  generated_note: string | null;
+  user_note: string | null;
+  user_rating: number | null;
 };

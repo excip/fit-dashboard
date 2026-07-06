@@ -3286,3 +3286,24 @@ button:focus-visible {
 .hiking-tab .hiking-verdict { display: flex; flex-direction: column; gap: 4px; margin: 10px 0 4px; color: var(--text-muted); font-size: 13px; }
 .hiking-tab .hiking-recovery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
 .hiking-tab .hiking-error { color: var(--danger); margin: 8px 0; font-size: 0.85rem; }
+
+/* Generated narrative + journal */
+.hiking-tab .hiking-note-generated { margin: 12px 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.hiking-tab .hiking-note-generated p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--text-secondary); }
+.hiking-tab .hiking-note-caption { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-muted); }
+.hiking-tab .hiking-journal-block { margin: 6px 0 4px; }
+.hiking-tab .hiking-journal { display: flex; flex-direction: column; gap: 6px; }
+.hiking-tab .hiking-journal.small { gap: 4px; margin: 6px 0 2px; }
+.hiking-tab .hiking-stars { display: inline-flex; gap: 2px; }
+.hiking-tab .hiking-stars button { background: none; border: none; padding: 0 1px; cursor: pointer; color: var(--text-muted); font-size: 18px; line-height: 1; }
+.hiking-tab .hiking-stars button.on { color: var(--accent); }
+.hiking-tab .hiking-stars.small button { font-size: 13px; }
+.hiking-tab .hiking-note-input { width: 100%; box-sizing: border-box; resize: none; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); padding: 6px 8px; font: inherit; font-size: 0.84rem; }
+.hiking-tab .hiking-note-input.small { font-size: 0.78rem; padding: 4px 6px; }
+.hiking-tab .trip-day { border-bottom: 1px solid var(--border); }
+.hiking-tab .trip-day:last-of-type { border-bottom: none; }
+.hiking-tab .trip-day .trip-row { border-bottom: none; }
+.hiking-tab .trip-day .hiking-journal.small { padding-bottom: 6px; }
+.hiking-tab .hiking-day-note { margin: 2px 0; }
+.hiking-tab .hiking-day-note-toggle { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.78rem; padding: 0; }
+.hiking-tab .hiking-day-note p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.45; color: var(--text-secondary); }

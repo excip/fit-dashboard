@@ -307,5 +307,20 @@ export const api = {
   async hikingSetActivityName(activityId: number, name: string | null): Promise<void> {
     if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
     await webClient.put(`/hiking/activity-name`, { activity_id: activityId, name });
+  },
+
+  async hikingSetUserNote(
+    subjectType: "trip" | "activity",
+    subjectId: number,
+    note: string | null,
+    rating: number | null,
+  ): Promise<void> {
+    if (isTauriRuntime()) throw new Error("hiking features are only available in web mode");
+    await webClient.put(`/hiking/user-note`, {
+      subject_type: subjectType,
+      subject_id: subjectId,
+      note,
+      rating,
+    });
   }
 };
