@@ -5,6 +5,7 @@ pub mod cluster;
 pub mod aggregate;
 pub mod store;
 pub mod baseline;
+pub mod simplify;
 pub mod episodes;
 pub mod factsheet;
 #[cfg(all(feature = "web", not(feature = "tauri-app")))]

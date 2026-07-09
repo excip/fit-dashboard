@@ -621,6 +621,28 @@ impl Database {
         }
         Ok(out)
     }
+
+    /// Lean GPS-only downsample for the hiking atlas: (lon, lat) pairs in time order.
+    #[cfg(all(feature = "web", not(feature = "tauri-app")))]
+    pub fn track_points(&self, activity_id: i64, resolution_ms: i64) -> Result<Vec<(f64, f64)>> {
+        let conn = self.conn.lock().expect("db mutex poisoned");
+        let query = r#"
+            SELECT CAST(AVG(longitude) AS DOUBLE), CAST(AVG(latitude) AS DOUBLE)
+            FROM records
+            WHERE activity_id = ?1 AND latitude IS NOT NULL AND longitude IS NOT NULL
+            GROUP BY (timestamp_ms / ?2)
+            ORDER BY MIN(timestamp_ms)
+        "#;
+        let mut stmt = conn.prepare(query)?;
+        let rows = stmt.query_map(params![activity_id, resolution_ms.max(1000)], |row| {
+            Ok((row.get::<_, f64>(0)?, row.get::<_, f64>(1)?))
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
+    }
 }
 
 fn is_wal_replay_internal_error(err: &duckdb::Error) -> bool {

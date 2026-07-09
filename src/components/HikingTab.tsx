@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import type { HikingOverview, NotesStatus, Trip, TripCategory } from "../types";
 import { HikingTripDetail } from "./HikingTripDetail";
+import { HikingAtlas } from "./HikingAtlas";
 
 const KM = (m: number) => (m / 1000).toFixed(0);
 
@@ -35,6 +36,7 @@ export function HikingTab({ onOpenActivity }: Props) {
   const [savingName, setSavingName] = useState(false);
   const [notesStatus, setNotesStatus] = useState<NotesStatus | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [atlasOpen, setAtlasOpen] = useState(false);
 
   const running = (notesStatus?.running ?? false) || generating;
 
@@ -138,6 +140,28 @@ export function HikingTab({ onOpenActivity }: Props) {
           </div>
         )}
       </div>
+
+      <button className="atlas-door" onClick={() => setAtlasOpen(true)}>
+        <svg className="atlas-door-trail" viewBox="0 0 340 64" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M4 54 C 58 50, 86 18, 132 24 S 214 56, 256 34 S 316 10, 336 8" fill="none" />
+          <circle cx="336" cy="8" r="2.5" />
+        </svg>
+        <span className="atlas-door-text">
+          <span className="atlas-door-eyebrow">The Atlas</span>
+          <span className="atlas-door-title">Every trail you've walked, on one map</span>
+        </span>
+        <span className="atlas-door-arrow" aria-hidden="true">→</span>
+      </button>
+
+      {atlasOpen && (
+        <HikingAtlas
+          onClose={() => setAtlasOpen(false)}
+          onOpenTrip={(id) => {
+            setAtlasOpen(false);
+            setSelectedTripId(id);
+          }}
+        />
+      )}
 
       {ov && (
         <>

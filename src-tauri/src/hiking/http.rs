@@ -130,6 +130,68 @@ pub async fn hiking_trips(
     Ok(Json(rows))
 }
 
+/// One activity's simplified GPS line for the atlas map, chronological order.
+#[derive(serde::Serialize)]
+pub struct AtlasTrack {
+    pub trip_id: i64,
+    pub activity_id: i64,
+    pub date: chrono::NaiveDate,
+    pub distance_m: f64,
+    /// [lon, lat] pairs, RDP-simplified and rounded to ~1 m precision.
+    pub coords: Vec<[f64; 2]>,
+}
+
+/// All hiking tracks in one payload, drawn by the atlas overview map.
+/// 60 s time buckets + ~17 m RDP tolerance keep it around 1 MB for a
+/// decade of hiking while staying visually faithful at overview zooms.
+pub async fn hiking_tracks(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<YearQuery>,
+) -> Result<Json<Vec<AtlasTrack>>, StatusCode> {
+    use chrono::Datelike;
+    ensure_session(&state, &headers)?;
+    let HikingData { acts, mut trips, .. } = load_acts_and_trips(&state)?;
+    if let Some(y) = q.year {
+        trips.retain(|t| t.start_date.year() == y);
+    }
+
+    let mut out: Vec<AtlasTrack> = Vec::new();
+    for trip in &trips {
+        for gid in &trip.activity_ids {
+            let Some(act) = acts.iter().find(|a| a.activity_id == *gid) else { continue };
+            let Some(dash_id) = state.db
+                .activity_id_by_file_name(&format!("{gid}_ACTIVITY.fit"))
+                .ok()
+                .flatten()
+            else { continue };
+            let pts = state.db.track_points(dash_id, 60_000).map_err(|e| {
+                tracing::error!(error = %e, activity_id = dash_id, "track points load failed");
+                StatusCode::INTERNAL_SERVER_ERROR
+            })?;
+            if pts.len() < 2 {
+                continue;
+            }
+            let coords: Vec<[f64; 2]> = crate::hiking::simplify::simplify_track(&pts, 0.00015)
+                .into_iter()
+                .map(|(lon, lat)| {
+                    [crate::hiking::simplify::round5(lon), crate::hiking::simplify::round5(lat)]
+                })
+                .collect();
+            out.push(AtlasTrack {
+                trip_id: trip.id,
+                activity_id: *gid,
+                date: act.date,
+                distance_m: act.distance_m,
+                coords,
+            });
+        }
+    }
+    out.sort_by(|a, b| a.date.cmp(&b.date).then(a.activity_id.cmp(&b.activity_id)));
+    tracing::debug!(tracks = out.len(), "hiking tracks completed");
+    Ok(Json(out))
+}
+
 #[derive(serde::Serialize)]
 pub struct TripDay {
     pub garmin_activity_id: i64,

@@ -59,6 +59,15 @@ export type Trip = {
   user_rating: number | null;
 };
 
+/** One activity's simplified GPS line for the atlas map ([lon, lat] pairs). */
+export type AtlasTrack = {
+  trip_id: number;
+  activity_id: number;
+  date: string;
+  distance_m: number;
+  coords: [number, number][];
+};
+
 export type NotesRun = {
   run_at: string;
   ok: boolean;
