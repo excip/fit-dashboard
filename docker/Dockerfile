@@ -12,9 +12,15 @@ RUN npm run build
 FROM rust:1-bookworm AS backend-builder
 WORKDIR /app
 
-COPY src-tauri/Cargo.toml ./src-tauri/Cargo.toml
+COPY src-tauri/Cargo.toml src-tauri/Cargo.lock ./src-tauri/
 COPY src-tauri/src ./src-tauri/src
-RUN cd src-tauri && cargo build --release --features web
+# Cache the cargo registry and target dir across builds: without them every
+# source edit recompiles all deps, including libduckdb-sys' ~25min C++ build.
+# Cache mounts are not part of the image layer, so the binary is copied out.
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+		--mount=type=cache,target=/app/src-tauri/target,sharing=locked \
+		cd src-tauri && cargo build --release --locked --features web \
+		&& cp target/release/fit-dashboard-core /usr/local/bin/fit-dashboard-core
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -22,7 +28,7 @@ RUN apt-get update \
 		&& rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=backend-builder /app/src-tauri/target/release/fit-dashboard-core /usr/local/bin/fit-dashboard
+COPY --from=backend-builder /usr/local/bin/fit-dashboard-core /usr/local/bin/fit-dashboard
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 RUN rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
