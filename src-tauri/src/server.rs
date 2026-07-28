@@ -63,6 +63,8 @@ pub fn app(state: AppState) -> Router {
         .route("/api/hiking/user-note", put(crate::hiking::http::hiking_set_user_note))
         .route("/api/hiking/notes/run", post(crate::hiking::http::hiking_notes_run))
         .route("/api/hiking/notes/status", get(crate::hiking::http::hiking_notes_status))
+        .route("/api/walking/overview", get(crate::walking::walking_overview))
+        .route("/api/walking/loop", get(crate::walking::walking_loop))
         .route("/api/records/{id}", get(records))
         .route("/api/supporter/verify", post(verify_supporter_code))
         .route("/api/supporter/status", get(get_supporter_status).post(set_supporter_status))

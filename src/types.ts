@@ -68,6 +68,49 @@ export type AtlasTrack = {
   coords: [number, number][];
 };
 
+export type WalkingYear = {
+  year: number;
+  steps: number;
+  distance_m: number;
+  active_days: number;
+  walks: number;
+  walk_distance_m: number;
+  walk_steps: number;
+};
+
+export type WalkingPeriod = {
+  steps: number;
+  distance_m: number;
+  walks: number;
+};
+
+export type WalkingOverview = {
+  years: WalkingYear[];
+  week: WalkingPeriod;
+  month: WalkingPeriod;
+  total: WalkingPeriod;
+  records: {
+    best_day_steps: number;
+    best_day_date: string | null;
+    longest_walk_m: number;
+    longest_walk_date: string | null;
+    longest_streak_days: number;
+    longest_streak_end: string | null;
+  };
+  /** Every recorded day as [ISO date, steps]. */
+  daily: [string, number][];
+};
+
+export type WalkingLoop = {
+  count: number;
+  distance_m: number;
+  steps: number;
+  first_date: string | null;
+  last_date: string | null;
+  per_year: { year: number; count: number; distance_m: number }[];
+  tracks: { date: string; distance_m: number; coords: [number, number][] }[];
+};
+
 export type NotesRun = {
   run_at: string;
   ok: boolean;

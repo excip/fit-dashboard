@@ -10,6 +10,8 @@ mod server;
 mod state;
 #[cfg(feature = "tauri-app")]
 mod tauri_app;
+#[cfg(all(feature = "web", not(feature = "tauri-app")))]
+mod walking;
 
 use anyhow::Result;
 use state::{AppState, StorageInfo};

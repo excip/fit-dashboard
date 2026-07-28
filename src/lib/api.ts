@@ -1,6 +1,6 @@
 import axios from "axios";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { Activity, AtlasTrack, HikingOverview, NotesStatus, OverviewStats, RecordPoint, Trip, TripCategory, TripDetail } from "../types";
+import type { Activity, AtlasTrack, HikingOverview, NotesStatus, OverviewStats, RecordPoint, Trip, TripCategory, TripDetail, WalkingLoop, WalkingOverview } from "../types";
 
 type StorageInfo = {
   data_dir: string;
@@ -328,6 +328,16 @@ export const api = {
       note,
       rating,
     });
+  },
+
+  async walkingOverview(): Promise<WalkingOverview> {
+    if (isTauriRuntime()) throw new Error("walking features are only available in web mode");
+    return (await webClient.get("/walking/overview")).data;
+  },
+
+  async walkingLoop(): Promise<WalkingLoop> {
+    if (isTauriRuntime()) throw new Error("walking features are only available in web mode");
+    return (await webClient.get("/walking/loop")).data;
   },
 
   async hikingNotesStatus(): Promise<NotesStatus> {
